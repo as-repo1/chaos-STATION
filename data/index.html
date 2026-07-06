@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="chaos STATION — ESP32 Smart Weather Station Command & Control">
+  <meta name="theme-color" content="#0f172a">
+  <title>chaos STATION</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="theme-nord">
+
+  <!-- Scanlines overlay (Cyberpunk only, toggled via CSS) -->
+  <div class="scanlines" aria-hidden="true"></div>
+
+  <div class="app-wrap">
+
+    <!-- ===================== HEADER ===================== -->
+    <header class="site-header">
+      <div class="header-left">
+        <div class="logo-mark">⚡</div>
+        <div>
+          <h1 class="site-title">chaos STATION</h1>
+          <p class="site-sub">Command &amp; Control Hub</p>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="connection-pill" id="conn-pill">
+          <span class="conn-dot" id="conn-dot"></span>
+          <span id="conn-label">Connecting…</span>
+        </div>
+        <div class="live-clock" id="live-clock">--:--:--</div>
+      </div>
+    </header>
+
+    <main class="main-content">
+
+      <!-- ===================== SENSOR GAUGES ===================== -->
+      <section class="section" id="s-gauges">
+        <div class="section-head">
+          <h2 class="section-title">Live Sensors</h2>
+          <button class="icon-btn" id="refresh-btn" title="Force refresh">⟳ Refresh</button>
+        </div>
+
+        <div class="gauges-grid">
+
+          <div class="gauge-card" id="gc-dht-temp">
+            <div class="gauge-wrap">
+              <div class="gauge-ring" id="ring-dht-temp">
+                <div class="gauge-inner">
+                  <span class="gauge-val" id="dht-temp">--</span>
+                  <span class="gauge-unit">°C</span>
+                </div>
+              </div>
+            </div>
+            <div class="gauge-label">Indoor Temp</div>
+            <div class="gauge-meta">
+              <span class="trend-icon" id="trend-dht-temp"></span>
+              <span class="min-max">↓<span id="min-dht-temp">--</span> ↑<span id="max-dht-temp">--</span>°</span>
+            </div>
+          </div>
+
+          <div class="gauge-card" id="gc-dht-hum">
+            <div class="gauge-wrap">
+              <div class="gauge-ring" id="ring-dht-hum">
+                <div class="gauge-inner">
+                  <span class="gauge-val" id="dht-hum">--</span>
+                  <span class="gauge-unit">%</span>
+                </div>
+              </div>
+            </div>
+            <div class="gauge-label">Humidity</div>
+            <div class="gauge-meta"><span class="min-max">Indoor DHT11</span></div>
+          </div>
+
+          <div class="gauge-card" id="gc-bmp-temp">
+            <div class="gauge-wrap">
+              <div class="gauge-ring" id="ring-bmp-temp">
+                <div class="gauge-inner">
+                  <span class="gauge-val" id="bmp-temp">--</span>
+                  <span class="gauge-unit">°C</span>
+                </div>
+              </div>
+            </div>
+            <div class="gauge-label">Outdoor Temp</div>
+            <div class="gauge-meta">
+              <span class="trend-icon" id="trend-bmp-temp"></span>
+              <span class="min-max">↓<span id="min-bmp-temp">--</span> ↑<span id="max-bmp-temp">--</span>°</span>
+            </div>
+          </div>
+
+          <div class="gauge-card" id="gc-bmp-press">
+            <div class="gauge-wrap">
+              <div class="gauge-ring" id="ring-bmp-press">
+                <div class="gauge-inner">
+                  <span class="gauge-val" id="bmp-press">--</span>
+                  <span class="gauge-unit">hPa</span>
+                </div>
+              </div>
+            </div>
+            <div class="gauge-label">Pressure</div>
+            <div class="gauge-meta"><span id="wx-condition">---</span></div>
+          </div>
+
+        </div><!-- /gauges-grid -->
+
+        <!-- System bar -->
+        <div class="sys-bar">
+          <div class="sys-item"><span class="sys-ico">⏱</span>Up: <strong id="sys-uptime">--</strong></div>
+          <div class="sys-item"><span class="sys-ico">💾</span>Heap: <strong id="sys-heap">--</strong></div>
+          <div class="sys-item"><span class="sys-ico">📡</span>RSSI: <strong id="sys-rssi">--</strong> dBm</div>
+          <div class="sys-item"><span class="sys-ico">🔄</span>Updated: <strong id="last-update">--</strong></div>
+        </div>
+      </section>
+
+      <!-- ===================== CHART + TFT REMOTE ===================== -->
+      <div class="two-col">
+
+        <section class="section" id="s-chart">
+          <div class="section-head">
+            <h2 class="section-title">Historical Trends</h2>
+            <a class="icon-btn" href="/api/history" download="weather_history.csv" title="Download CSV">⬇ CSV</a>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="tempChart"></canvas>
+          </div>
+        </section>
+
+        <section class="section" id="s-tft">
+          <div class="section-head">
+            <h2 class="section-title">TFT Remote</h2>
+            <div class="active-badge">Page <span id="active-page-num">-</span></div>
+          </div>
+
+          <div class="page-grid" id="page-grid">
+            <!-- Filled by JS -->
+          </div>
+
+          <div class="carousel-row">
+            <label class="toggle-label-row">
+              <span>Carousel</span>
+              <label class="pill-toggle">
+                <input type="checkbox" id="tftCarousel">
+                <span class="pill-slider"></span>
+              </label>
+            </label>
+          </div>
+          <div class="speed-row">
+            <span class="speed-label">Speed: <strong id="speed-val">8s</strong></span>
+            <input type="range" id="speed-range" min="3000" max="30000" step="1000" value="8000" class="styled-range">
+          </div>
+          <div class="tft-quick-actions">
+            <button class="secondary-btn" id="save-tft-btn">Save TFT Settings</button>
+            <span id="tft-settings-status" class="status-msg"></span>
+          </div>
+        </section>
+
+      </div><!-- /two-col -->
+
+      <!-- ===================== NOTES + POMODORO ===================== -->
+      <div class="two-col">
+
+        <section class="section" id="s-notes">
+          <h2 class="section-title">Notes &amp; Tasks</h2>
+
+          <div class="notes-block">
+            <div class="input-header">
+              <label for="notes-input">TFT Notes</label>
+              <span class="char-counter"><span id="notes-chars">0</span>/120</span>
+            </div>
+            <textarea id="notes-input" maxlength="120" placeholder="Write a note to show on the TFT…"></textarea>
+            <button class="primary-btn" id="save-notes-btn">Save Notes</button>
+            <span id="notes-status" class="status-msg"></span>
+          </div>
+
+          <div class="todos-block">
+            <div class="input-header">
+              <label>Tasks</label>
+              <span class="badge" id="todo-badge">0/5</span>
+            </div>
+            <div class="todo-input-row">
+              <input type="text" id="todo-input" maxlength="25" placeholder="Add a task (max 5)…">
+              <button class="secondary-btn" id="add-todo-btn">Add</button>
+            </div>
+            <ul id="todo-list" class="todo-list"></ul>
+          </div>
+        </section>
+
+        <section class="section" id="s-pomo">
+          <h2 class="section-title">Pomodoro</h2>
+
+          <div class="pomo-ring-container">
+            <svg class="pomo-svg" viewBox="0 0 120 120" aria-hidden="true">
+              <circle class="pomo-track" cx="60" cy="60" r="50"/>
+              <circle class="pomo-arc" id="pomo-arc" cx="60" cy="60" r="50"
+                      stroke-dasharray="314" stroke-dashoffset="314"/>
+            </svg>
+            <div class="pomo-center">
+              <div class="pomo-time" id="pomo-time">25:00</div>
+              <div class="pomo-state" id="pomo-state-label">Ready</div>
+            </div>
+          </div>
+
+          <div class="pomo-controls">
+            <div class="pomo-dur-row">
+              <label for="pomodoro-duration">Duration</label>
+              <input type="number" id="pomodoro-duration" value="25" min="1" max="120" class="dur-input">
+              <span>min</span>
+            </div>
+            <div class="pomo-btn-row">
+              <button class="primary-btn" id="start-pomodoro-btn">▶ Start</button>
+              <button class="delete-btn" id="stop-pomodoro-btn">■ Stop</button>
+            </div>
+            <span id="pomodoro-status" class="status-msg"></span>
+          </div>
+        </section>
+
+      </div><!-- /two-col -->
+
+      <!-- ===================== THEME SELECTOR ===================== -->
+      <section class="section" id="s-themes">
+        <div class="section-head">
+          <h2 class="section-title">Theme</h2>
+          <span class="section-desc">Applies to both this dashboard and the TFT display simultaneously.</span>
+        </div>
+
+        <div class="theme-cards" id="theme-cards">
+
+          <div class="theme-card" data-theme="theme-nord" data-tft="0" id="tc-nord">
+            <div class="tc-preview nord-prev">
+              <div class="tc-topbar"></div>
+              <div class="tc-body">
+                <div class="tc-chip tc-accent"></div>
+                <div class="tc-chip tc-warn"></div>
+                <div class="tc-chip tc-special"></div>
+                <div class="tc-chip tc-success"></div>
+              </div>
+              <div class="tc-gauge-row">
+                <div class="tc-mini-ring tc-ring-1"></div>
+                <div class="tc-mini-ring tc-ring-2"></div>
+              </div>
+            </div>
+            <div class="tc-footer">
+              <div class="tc-name">Nord</div>
+              <div class="tc-desc">Arctic cool</div>
+              <div class="tc-check">✓</div>
+            </div>
+          </div>
+
+          <div class="theme-card" data-theme="theme-cyberpunk" data-tft="1" id="tc-cyberpunk">
+            <div class="tc-preview cyberpunk-prev">
+              <div class="tc-topbar"></div>
+              <div class="tc-body">
+                <div class="tc-chip tc-accent"></div>
+                <div class="tc-chip tc-warn"></div>
+                <div class="tc-chip tc-special"></div>
+                <div class="tc-chip tc-success"></div>
+              </div>
+              <div class="tc-gauge-row">
+                <div class="tc-mini-ring tc-ring-1"></div>
+                <div class="tc-mini-ring tc-ring-2"></div>
+              </div>
+            </div>
+            <div class="tc-footer">
+              <div class="tc-name">Cyberpunk</div>
+              <div class="tc-desc">Neon × night</div>
+              <div class="tc-check">✓</div>
+            </div>
+          </div>
+
+          <div class="theme-card" data-theme="theme-coder" data-tft="2" id="tc-coder">
+            <div class="tc-preview coder-prev">
+              <div class="tc-topbar"></div>
+              <div class="tc-body">
+                <div class="tc-chip tc-accent"></div>
+                <div class="tc-chip tc-warn"></div>
+                <div class="tc-chip tc-special"></div>
+                <div class="tc-chip tc-success"></div>
+              </div>
+              <div class="tc-gauge-row">
+                <div class="tc-mini-ring tc-ring-1"></div>
+                <div class="tc-mini-ring tc-ring-2"></div>
+              </div>
+            </div>
+            <div class="tc-footer">
+              <div class="tc-name">Coder</div>
+              <div class="tc-desc">Terminal green</div>
+              <div class="tc-check">✓</div>
+            </div>
+          </div>
+
+          <div class="theme-card" data-theme="theme-gruvbox" data-tft="3" id="tc-gruvbox">
+            <div class="tc-preview gruvbox-prev">
+              <div class="tc-topbar"></div>
+              <div class="tc-body">
+                <div class="tc-chip tc-accent"></div>
+                <div class="tc-chip tc-warn"></div>
+                <div class="tc-chip tc-special"></div>
+                <div class="tc-chip tc-success"></div>
+              </div>
+              <div class="tc-gauge-row">
+                <div class="tc-mini-ring tc-ring-1"></div>
+                <div class="tc-mini-ring tc-ring-2"></div>
+              </div>
+            </div>
+            <div class="tc-footer">
+              <div class="tc-name">Gruvbox</div>
+              <div class="tc-desc">Warm retro amber</div>
+              <div class="tc-check">✓</div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ===================== DISPLAY SETTINGS ===================== -->
+      <section class="section" id="s-settings">
+        <h2 class="section-title">Display Settings</h2>
+
+        <div class="settings-grid">
+
+          <!-- OLED Mode -->
+          <div class="setting-group">
+            <h3 class="group-label">OLED Mode</h3>
+            <div class="mode-btn-group" id="oled-mode-btns">
+              <button class="mode-btn active" data-mode="0">🌡️ Weather</button>
+              <button class="mode-btn"        data-mode="1">🕐 Clock</button>
+              <button class="mode-btn"        data-mode="2">💻 System</button>
+            </div>
+          </div>
+
+          <!-- Font Sizes -->
+          <div class="setting-group">
+            <h3 class="group-label">Font Sizes</h3>
+            <div class="setting-row">
+              <label for="notesFontSize">Notes</label>
+              <select id="notesFontSize" class="styled-select">
+                <option value="1">Small</option>
+                <option value="2">Large</option>
+              </select>
+            </div>
+            <div class="setting-row">
+              <label for="todoFontSize">Tasks</label>
+              <select id="todoFontSize" class="styled-select">
+                <option value="1">Small</option>
+                <option value="2">Large</option>
+              </select>
+            </div>
+          </div>
+
+        </div><!-- /settings-grid -->
+
+        <!-- Active Pages -->
+        <div class="pages-section">
+          <h3 class="group-label">Active Pages <span class="muted">(carousel order 0–9)</span></h3>
+          <div class="pages-grid" id="pages-grid">
+            <!-- Filled by JS -->
+          </div>
+        </div>
+
+        <div class="save-row">
+          <button class="primary-btn" id="save-settings-btn">Apply All Settings</button>
+          <span id="settings-status" class="status-msg"></span>
+        </div>
+
+      </section><!-- /settings -->
+
+    </main>
+
+    <footer class="site-footer">
+      <span>chaos STATION · ESP32 · <a href="http://esp2display.local" target="_blank">esp2display.local</a></span>
+    </footer>
+
+  </div><!-- /app-wrap -->
+
+  <script src="app.js"></script>
+</body>
+</html>

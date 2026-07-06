@@ -1,0 +1,22 @@
+# PlatformIO
+# .pio/ - excluding this // for mainArch system - "chaos"
+.pioenvs/
+.piolibdeps/
+*.hex
+*.elf
+*.bin
+
+# IDEs
+.vscode/
+.idea/
+*.suo
+*.sln
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
