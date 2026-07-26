@@ -17,10 +17,11 @@ Welcome to **chaos STATION**, a modern, multi-display, multi-theme Smart Weather
 
 ## ✨ Features
 
+- 📶 **Wi-Fi Provisioning & Screen QR Code**: No hardcoded credentials required! If no Wi-Fi network is configured or available, the ESP32 starts a Wi-Fi Hotspot (`chaos-STATION`, IP `192.168.4.1`) with a `DNSServer` captive portal. Native QR codes are generated on-the-fly and rendered on both the TFT and OLED screens for instant smartphone scanning & connection.
 - 🖥️ **Dual Hardware Displays**: 
   - **128x160 TFT LCD (ST7735)**: Rich graphical UI featuring 10 dynamic pages (Dashboard, Temp Dial, Atmosphere Rings, Notes, Tasks, Forecast, Clock, System Terminal, Pomodoro Timer, and Hardware Health).
   - **128x64 OLED (SSD1306)**: Secondary monochrome display with **10 selectable modes** (Weather, Clock, System, Pomodoro, Forecast, Temp Graph, Notes, Tasks, Analog clock, Binary clock). Switch instantly from the web dashboard.
-- 🌐 **Advanced Web Dashboard**: A glassmorphic, responsive web interface hosted directly on the ESP32 (via LittleFS). Control the TFT remotely, view live sensor gauges, and monitor historical trends via Chart.js.
+- 🌐 **Advanced Web Dashboard & Wi-Fi Scanner**: A glassmorphic, responsive web interface hosted directly on the ESP32 (via LittleFS). Features an integrated Wi-Fi scanner to discover nearby APs, connect to home Wi-Fi networks, control the TFT remotely, view live sensor gauges, and monitor historical trends via Chart.js.
 - 🎨 **4-Theme Synchronization Engine**: Swap themes on the web dashboard and watch the physical TFT display update in real-time. Choose between:
   - ❄️ **Nord**: A cool, arctic palette with soft pastels.
   - 🌆 **Cyberpunk**: High-contrast neon on dark navy, complete with CSS scanline overlays.
@@ -91,7 +92,7 @@ graph TD
 
 ## 🏗️ System Architecture
 
-The firmware utilizes a robust `state` structure and a semantic palette system. Communication between the Web UI and the ESP32 happens via REST API endpoints (`/api/data`, `/api/settings`, `/api/status`, etc.). 
+The firmware utilizes a robust `state` structure and a semantic palette system. Communication between the Web UI and the ESP32 happens via REST API endpoints (`/api/data`, `/api/settings`, `/api/status`, `/api/wifi/scan`, `/api/wifi/save`, etc.). 
 
 ### Client-Server Flow Diagram
 
@@ -105,6 +106,13 @@ sequenceDiagram
     Web->>API: GET /api/data (Polling)
     API-->>Web: JSON (Sensors, RSSI, Heap)
     Web->>Web: Update Chart.js & CSS Gauges
+    
+    Web->>API: GET /api/wifi/scan
+    API-->>Web: JSON List of Nearby SSIDs
+    
+    Web->>API: POST /api/wifi/save (Connect to Wi-Fi)
+    API->>FS: Save to wifi.json
+    API-->>Web: 200 OK & Reboot into Station Mode
     
     Web->>API: POST /api/settings (Theme change)
     API->>FS: Save to config.json
@@ -123,18 +131,20 @@ graph TD
     subgraph ESP32 Firmware
         API[AsyncWebServer API]
         Sensors[Sensor Tasks: DHT/BMP]
-        Config[config.json Manager]
-        UI[TFT/OLED Render Engine]
+        Config[config.json & wifi.json Manager]
+        UI[TFT/OLED Render Engine & QR Code Generator]
+        APMode[Access Point & Captive Portal]
     end
     
     subgraph Web App
         HTML[index.html]
         CSS[style.css - 4 Themes]
-        JS[app.js - State Sync]
+        JS[app.js - State & Wi-Fi Sync]
     end
     
     Sensors --> API
     Config --> UI
+    APMode --> UI
     JS -- REST API JSON --> API
     API --> UI
     API -- Reads/Writes --> Config
@@ -177,27 +187,24 @@ This project is built using **PlatformIO** and includes a one-click deployment s
    cd chaos-STATION
    ```
 
-2. **Configure WiFi**:
-   Open `src/main.cpp` and edit the `WIFI_NETWORKS` list. The device tries each network **in order** and falls over to the next automatically if one is unavailable:
-   ```cpp
-   WifiNetwork WIFI_NETWORKS[] = {
-     { "Your_SSID",   "Your_Password" },   // primary
-     { "wifi",        "wifiwifiwifi"  }    // fallback (e.g. a hotspot)
-   };
-   ```
-   You can add as many `{ ssid, pass }` pairs as you like. If all fail at boot, it retries the primary; in normal operation it rotates to the next network on any drop.
-
-3. **Deploy the System**:
+2. **Deploy Firmware & Dashboard**:
    Run the automated deployment script to build the firmware and upload the LittleFS dashboard:
    ```bash
    ./deploy.sh
    ```
    *(If you are on Windows, you can manually run `pio run -t upload` and `pio run -t uploadfs` instead).*
 
-4. **Access the Dashboard**:
-   Once the ESP32 boots and connects to WiFi, you can access the dashboard by navigating to the IP address displayed on the OLED screen, or by visiting:
+3. **Connect to Wi-Fi Hotspot**:
+   - On first boot (or if Wi-Fi isn't configured), the device starts in **Hotspot Mode** (`chaos-STATION`).
+   - Scan the **QR Code** displayed on the OLED/TFT screen with your smartphone camera to automatically connect to the hotspot and open `http://192.168.4.1`.
+
+4. **Provision Wi-Fi**:
+   - In the web dashboard under **📡 Wi-Fi Configuration**, click **Scan**, select your home Wi-Fi network, enter your password, and click **Connect & Save**.
+   - The device will save credentials to `/wifi.json` and automatically reboot into Station Mode!
+   - Once connected, access the dashboard at the IP address shown on screen or via:
    ```text
    http://esp2display.local
+   ```
    ```
 
 ---

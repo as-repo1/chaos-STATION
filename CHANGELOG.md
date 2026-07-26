@@ -9,18 +9,31 @@ and the project targets the ESP32 (Arduino framework via PlatformIO).
 
 ---
 
-## [Unreleased] — Session Worklog (2026-07-06 → 2026-07-07)
+## [Unreleased] — Session Worklog (2026-07-26 → 2026-07-27)
 
 ### Summary
 
-Three bodies of work were delivered in this session, all verified with a clean
-PlatformIO build (**73.6% flash / 15.3% RAM**):
+Four bodies of work delivered, verified with a clean PlatformIO build & upload (**74.7% flash / 15.4% RAM**):
 
-1. **Code review & audit** — identified bugs, optimizations, and feature ideas.
-2. **OLED multi-mode display** — expanded the secondary display from 3 to 10 modes.
-3. **Multi-network WiFi failover** — automatic fallback between configured networks.
+1. **Wi-Fi Provisioning & Screen QR Code** — Access Point mode (`chaos-STATION`), captive portal, on-screen QR codes, and web Wi-Fi scanner.
+2. **Code review & audit** — identified bugs, optimizations, and feature ideas.
+3. **OLED multi-mode display** — expanded the secondary display from 3 to 10 modes.
+4. **Multi-network WiFi failover** — automatic fallback between configured networks.
 
-Each is detailed below.
+---
+
+## 0. Wi-Fi Provisioning & Screen QR Code
+
+Replaced hardcoded Wi-Fi credentials with dynamic Wi-Fi Provisioning and native on-device QR code generation.
+
+### Changes
+- **`platformio.ini`**: Added `ricmoo/QRCode @ ^0.0.1` library.
+- **`src/main.cpp`**:
+  - `loadWifiCredentials()` / `saveWifiCredentials()`: Persistent storage in `/wifi.json`.
+  - `startAPMode()`: Access Point SSID `chaos-STATION`, Password `12345678`, IP `192.168.4.1` with `DNSServer` captive portal.
+  - `renderAPScreens()`: Generates Version 3 QR code (`WIFI:S:chaos-STATION;T:WPA;P:12345678;;`) and renders on ST7735 TFT and SSD1306 OLED.
+  - Added API endpoints: `GET /api/wifi/scan`, `POST /api/wifi/save`, `POST /api/wifi/reset`.
+- **`data/index.html` & `data/app.js` & `data/style.css`**: Added Wi-Fi Configuration card with scan dropdown, password input, and save/reset actions.
 
 ---
 

@@ -227,13 +227,18 @@
 
         <div class="wifi-card-body">
           <div class="wifi-row">
-            <label for="wifi-ssids">Available Networks</label>
+            <label for="wifi-ssids">Scanned Networks</label>
             <div class="wifi-scan-group">
               <select id="wifi-ssids" class="styled-select">
                 <option value="">-- Click Scan to find networks --</option>
               </select>
               <button class="secondary-btn" id="scan-wifi-btn">🔍 Scan</button>
             </div>
+          </div>
+
+          <div class="wifi-row">
+            <label for="wifi-ssid-input">Wi-Fi Name (SSID)</label>
+            <input type="text" id="wifi-ssid-input" class="styled-input" placeholder="Type network name manually or select from scan above">
           </div>
 
           <div class="wifi-row">

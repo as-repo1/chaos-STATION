@@ -25,23 +25,24 @@ The ESP32 firmware operates on a concurrent loop architecture, handling multiple
 1. **Serial & I2C/SPI:** Initializes Serial output, I2C bus for the OLED and BMP180, and hardware SPI for the TFT.
 2. **Sensors:** Bootstraps the DHT11 and BMP180 sensors.
 3. **Displays:** Initializes the 1.8" ST7735 TFT and 0.96" SSD1306 OLED.
-4. **Network & Time:** Connects to WiFi using a **multi-network failover** — walks the `WIFI_NETWORKS[]` list in order, falling through to the next if one is unavailable, then syncs with an NTP server (`pool.ntp.org`) and establishes the local timezone offset. The main loop also rotates to the next network whenever the active connection drops.
-5. **Filesystem (LittleFS):** Mounts the internal flash memory to serve HTML/CSS/JS and store historical CSV data.
-6. **Web Server:** Configures RESTful API routes (`/api/data`, `/api/history`) and serves static files.
+4. **Network, Access Point & Time:** Reads saved Wi-Fi credentials from `/wifi.json`. If credentials exist and connection succeeds, syncs time via NTP (`pool.ntp.org`). If no credentials exist or connection fails, starts Access Point mode (`chaos-STATION`, IP `192.168.4.1`) with a `DNSServer` captive portal and renders a Wi-Fi connection QR code on the displays.
+5. **Filesystem (LittleFS):** Mounts the internal flash memory to serve HTML/CSS/JS and store historical CSV data, settings (`config.json`), notes (`notes.json`), and Wi-Fi credentials (`wifi.json`).
+6. **Web Server:** Configures RESTful API routes (`/api/data`, `/api/history`, `/api/wifi/*`) and serves static files.
 
 ### 2.2. The Main Loop (`loop()`)
 The `loop()` function is entirely non-blocking and relies on delta-time (`millis() - lastTime`) to trigger events:
+- **Captive Portal DNS (Continuous):** When in AP mode, processes incoming DNS requests via `dnsServer.processNextRequest()`.
 - **Sensor Reading (Every 2s):** Fetches fresh Temperature, Humidity, and Pressure data.
 - **Web Server Polling (Continuous):** Listens for incoming HTTP requests and serves API JSON/Files.
-- **Display Updating (Every 2s / Dynamic):** Re-renders the OLED and TFT displays.
+- **Display Updating (Every 2s / Dynamic):** Re-renders OLED & TFT displays (or AP QR code screens if in AP mode).
 - **Carousel State Machine (Every 8s):** Cycles the TFT display through multiple "Pages" to show more data.
 - **Data Logging (Every 10m):** Appends the latest sensor readings to `/history.csv` on the flash drive.
 
-### 2.3. TFT Custom Graphics Engine (Trigonometry)
-Because the Adafruit GFX library lacks complex shapes, we implemented custom mathematical graphics:
+### 2.3. TFT & OLED Custom Graphics Engine
+- **`renderAPScreens()`:** Generates a 29×29 Version 3 QR code payload (`WIFI:S:chaos-STATION;T:WPA;P:12345678;;`) using `ricmoo/QRCode` and renders it on both the TFT (87×87 px padded box) and OLED (58×58 px box).
 - **`drawArc()`:** Uses `sin()` and `cos()` to draw thick circular progress rings for Humidity and Pressure.
-- **`drawNeedle()`:** Calculates polar coordinates to draw an angled Analog Speedometer needle based on the Temperature.
-- **`drawSun()` / `drawRain()`:** Dynamic animations that render in the corner depending on current weather conditions.
+- **`drawAnalogDial()`:** Calculates polar coordinates to draw an angled Analog Gauge needle based on the Temperature.
+- **`drawAnimatedSun()`:** Dynamic animations that render in the corner depending on current weather conditions.
 
 ### 2.4. Web Server API Endpoints
 - `GET /` -> Serves `index.html`
@@ -51,8 +52,11 @@ Because the Adafruit GFX library lacks complex shapes, we implemented custom mat
 - `GET /api/settings` / `POST /api/settings` -> Read/write display settings (OLED mode, theme, carousel, page enable flags, font sizes). Persisted to `/config.json`.
 - `GET /api/notes` / `POST /api/notes` -> Read/write TFT notes and the 5-item task list. Persisted to `/notes.json`.
 - `POST /api/pomodoro` -> `{action:"start"|"stop", duration:<min>}` to control the focus timer.
-- `GET /api/status` -> Current TFT page, pomodoro state + remaining seconds, active theme, RSSI. Used by the dashboard to sync.
+- `GET /api/status` -> Current TFT page, pomodoro state, active theme, RSSI, `isAPMode`, and `ip`. Used by the dashboard to sync.
 - `POST /api/page` -> Force the TFT to jump to a specific page: `{page:<0-9>}`.
+- `GET /api/wifi/scan` -> Scans surrounding Wi-Fi networks and returns a JSON array: `[{"ssid":"...", "rssi":-60, "secure":true}, ...]`.
+- `POST /api/wifi/save` -> Saves Wi-Fi credentials `{ssid:"...", pass:"..."}` to `/wifi.json` and reboots device.
+- `POST /api/wifi/reset` -> Deletes `/wifi.json` and reboots device back into AP Hotspot Mode.
 
 ### 2.5. OLED Multi-Mode Renderer
 The 128×64 OLED supports **10 selectable modes** (`oledMode` 0–9), each a branch in `renderOLED()`:

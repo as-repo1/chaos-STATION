@@ -225,7 +225,13 @@ void initDisplays() {
   Wire.begin(OLED_SDA, OLED_SCL);
   if (!oled.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR))
     Serial.println(F("[OLED] Init failed"));
-  oled.clearDisplay(); oled.setTextColor(SSD1306_WHITE);
+  oled.clearDisplay();
+  oled.setTextColor(SSD1306_WHITE);
+  oled.setTextSize(2);
+  oled.setCursor(34, 24);
+  oled.print(F("chaos"));
+  oled.display();
+
   tft.initR(INITR_BLACKTAB);
   tft.setRotation(2);
   tft.fillScreen(NORD0);
@@ -248,6 +254,10 @@ void loadWifiCredentials() {
       f.close();
     }
   }
+  if (staSSID.length() == 0) {
+    staSSID = "Airtel_a204";
+    staPass = "rahulkhanki";
+  }
 }
 
 void saveWifiCredentials(const String& ssid, const String& pass) {
@@ -263,7 +273,7 @@ void saveWifiCredentials(const String& ssid, const String& pass) {
 
 void startAPMode() {
   isAPMode = true;
-  WiFi.mode(WIFI_AP);
+  WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(AP_SSID, AP_PASS);
   dnsServer.start(53, "*", WiFi.softAPIP());
   Serial.printf("[AP] Access Point started: %s (IP: %s)\n", AP_SSID, WiFi.softAPIP().toString().c_str());
@@ -304,7 +314,7 @@ void renderAPScreens() {
   String qrPayload = String("WIFI:S:") + AP_SSID + ";T:WPA;P:" + AP_PASS + ";;";
   qrcode_initText(&qrcode, qrcodeData, 3, ECC_LOW, qrPayload.c_str());
 
-  // 1. OLED Display (128x64)
+  // 1. OLED Display (128x64) — Only QR code & IP
   oled.clearDisplay();
   oled.setFont(); oled.setTextSize(1); oled.setTextColor(SSD1306_WHITE);
   
@@ -312,17 +322,14 @@ void renderAPScreens() {
   for (uint8_t y = 0; y < qrcode.size; y++) {
     for (uint8_t x = 0; x < qrcode.size; x++) {
       if (qrcode_getModule(&qrcode, x, y)) {
-        oled.fillRect(2 + x * 2, 3 + y * 2, 2, 2, SSD1306_WHITE);
+        oled.fillRect(x * 2, 3 + y * 2, 2, 2, SSD1306_WHITE);
       }
     }
   }
 
-  oled.setCursor(64, 2);  oled.print(F("HOTSPOT"));
-  oled.drawLine(64, 11, 128, 11, SSD1306_WHITE);
-  oled.setCursor(64, 15); oled.print(F("SSID:"));
-  oled.setCursor(64, 25); oled.print(F("chaos-ST"));
-  oled.setCursor(64, 38); oled.print(F("IP:"));
-  oled.setCursor(64, 48); oled.print(F("192.168.4.1"));
+  // Right: IP address only
+  oled.setCursor(60, 20); oled.print(F("IP:"));
+  oled.setCursor(60, 34); oled.print(WiFi.softAPIP().toString().c_str());
   oled.display();
 
   // 2. ST7735 TFT Display (128x160)
@@ -552,14 +559,24 @@ void handlePostPage() {
 
 // ---- Wi-Fi Provisioning Handlers ----
 void handleWifiScan() {
-  int n = WiFi.scanNetworks();
-  StaticJsonDocument<1024> doc;
+  if (WiFi.getMode() == WIFI_AP) {
+    WiFi.mode(WIFI_AP_STA);
+  }
+  int n = WiFi.scanNetworks(false, true);
+  if (n < 0) {
+    delay(250);
+    n = WiFi.scanNetworks(false, true);
+  }
+  StaticJsonDocument<2048> doc;
   JsonArray arr = doc.to<JsonArray>();
-  for (int i = 0; i < n; ++i) {
-    JsonObject net = arr.createNestedObject();
-    net["ssid"]   = WiFi.SSID(i);
-    net["rssi"]   = WiFi.RSSI(i);
-    net["secure"] = (WiFi.encryptionType(i) != WIFI_AUTH_OPEN);
+  if (n > 0) {
+    for (int i = 0; i < n && i < 20; ++i) {
+      JsonObject net = arr.createNestedObject();
+      net["ssid"]   = WiFi.SSID(i);
+      net["rssi"]   = WiFi.RSSI(i);
+      net["secure"] = (WiFi.encryptionType(i) != WIFI_AUTH_OPEN);
+    }
+    WiFi.scanDelete();
   }
   String j; serializeJson(doc, j);
   server.send(200, F("application/json"), j);

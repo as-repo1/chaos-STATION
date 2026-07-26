@@ -742,6 +742,7 @@ initChart();
 async function scanWifiNetworks() {
   const btn = document.getElementById('scan-wifi-btn');
   const select = document.getElementById('wifi-ssids');
+  const input = document.getElementById('wifi-ssid-input');
   const status = document.getElementById('wifi-status');
   if (!select) return;
   
@@ -752,9 +753,9 @@ async function scanWifiNetworks() {
     const res = await fetch('/api/wifi/scan');
     if (res.ok) {
       const networks = await res.json();
-      select.innerHTML = '';
+      select.innerHTML = '<option value="">-- Select from scanned list --</option>';
       if (networks.length === 0) {
-        select.innerHTML = '<option value="">No networks found</option>';
+        showStatus(status, 'No networks found', true);
       } else {
         networks.forEach(net => {
           const opt = document.createElement('option');
@@ -762,8 +763,8 @@ async function scanWifiNetworks() {
           opt.textContent = `${net.ssid} (${net.rssi} dBm) ${net.secure ? '🔒' : '🔓'}`;
           select.appendChild(opt);
         });
+        showStatus(status, `Found ${networks.length} networks`);
       }
-      showStatus(status, `Found ${networks.length} networks`);
     } else {
       select.innerHTML = '<option value="">Failed to scan</option>';
       showStatus(status, 'Scan failed', true);
@@ -777,15 +778,19 @@ async function scanWifiNetworks() {
 }
 
 async function saveWifiCredentials() {
+  const input = document.getElementById('wifi-ssid-input');
   const select = document.getElementById('wifi-ssids');
   const passInput = document.getElementById('wifi-pass');
   const status = document.getElementById('wifi-status');
   
-  const ssid = select ? select.value : '';
+  let ssid = input && input.value ? input.value.trim() : '';
+  if (!ssid && select && select.value) {
+    ssid = select.value.trim();
+  }
   const pass = passInput ? passInput.value : '';
   
   if (!ssid) {
-    showStatus(status, 'Please select or enter an SSID', true);
+    showStatus(status, 'Please enter or select a Wi-Fi Name (SSID)', true);
     return;
   }
   
@@ -824,10 +829,21 @@ async function resetWifiCredentials() {
   }
 }
 
-// Bind Wi-Fi buttons
+// Bind Wi-Fi buttons & select sync
 const scanBtn = document.getElementById('scan-wifi-btn');
 const saveWBtn = document.getElementById('save-wifi-btn');
 const resetWBtn = document.getElementById('reset-wifi-btn');
+const wifiSelect = document.getElementById('wifi-ssids');
+const wifiInput = document.getElementById('wifi-ssid-input');
+
+if (wifiSelect && wifiInput) {
+  wifiSelect.addEventListener('change', () => {
+    if (wifiSelect.value) {
+      wifiInput.value = wifiSelect.value;
+    }
+  });
+}
+
 if (scanBtn) scanBtn.addEventListener('click', scanWifiNetworks);
 if (saveWBtn) saveWBtn.addEventListener('click', saveWifiCredentials);
 if (resetWBtn) resetWBtn.addEventListener('click', resetWifiCredentials);
