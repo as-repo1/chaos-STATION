@@ -218,6 +218,37 @@
 
       </div><!-- /two-col -->
 
+      <!-- ===================== WIFI SETUP ===================== -->
+      <section class="section" id="s-wifi">
+        <div class="section-head">
+          <h2 class="section-title">📡 Wi-Fi Configuration</h2>
+          <span class="section-desc" id="wifi-status-desc">Connect device to your Wi-Fi network</span>
+        </div>
+
+        <div class="wifi-card-body">
+          <div class="wifi-row">
+            <label for="wifi-ssids">Available Networks</label>
+            <div class="wifi-scan-group">
+              <select id="wifi-ssids" class="styled-select">
+                <option value="">-- Click Scan to find networks --</option>
+              </select>
+              <button class="secondary-btn" id="scan-wifi-btn">🔍 Scan</button>
+            </div>
+          </div>
+
+          <div class="wifi-row">
+            <label for="wifi-pass">Wi-Fi Password</label>
+            <input type="password" id="wifi-pass" class="styled-input" placeholder="Enter Wi-Fi Password">
+          </div>
+
+          <div class="wifi-actions">
+            <button class="primary-btn" id="save-wifi-btn">Connect &amp; Save</button>
+            <button class="delete-btn" id="reset-wifi-btn" title="Reset stored credentials">Forget Wi-Fi</button>
+            <span id="wifi-status" class="status-msg"></span>
+          </div>
+        </div>
+      </section>
+
       <!-- ===================== THEME SELECTOR ===================== -->
       <section class="section" id="s-themes">
         <div class="section-head">

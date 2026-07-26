@@ -11,6 +11,7 @@
 #include <Wire.h>
 #include <SPI.h>
 #include <WiFi.h>
+#include <DNSServer.h>
 #include <WebServer.h>
 #include <ESPmDNS.h>
 #include <LittleFS.h>
@@ -20,6 +21,7 @@
 #include <Adafruit_BMP085.h>
 #include <DHT.h>
 #include <ArduinoJson.h>
+#include <qrcode.h>
 #include <time.h>
 #include <math.h>
 
@@ -46,20 +48,15 @@
 #define DHT_TYPE    DHT11
 
 // =================================================================
-// ---- WiFi & NTP ----
-// Multiple networks: tried in order. If the primary is unavailable,
-// the device falls back to the next, then loops back to the primary.
+// ---- WiFi, Access Point & NTP ----
 // =================================================================
-struct WifiNetwork { const char* ssid; const char* pass; };
-WifiNetwork WIFI_NETWORKS[] = {
-  { "Airtel_a204",   "rahulkhanki"  },   // primary
-  { "wifi",          "wifiwifiwifi" }    // fallback
-};
-const uint8_t WIFI_NET_COUNT = sizeof(WIFI_NETWORKS)/sizeof(WIFI_NETWORKS[0]);
-uint8_t       wifiNetIndex   = 0;          // network currently in use
+DNSServer   dnsServer;
+bool        isAPMode   = false;
+String      staSSID    = "";
+String      staPass    = "";
 
-// Per-attempt timeout; all networks are tried before giving up.
-const unsigned long WIFI_PER_NET_TIMEOUT = 10000UL;
+const char* AP_SSID    = "chaos-STATION";
+const char* AP_PASS    = "12345678";
 
 const long  gmtOffset_sec      = 19800L;  // UTC+5:30
 const int   daylightOffset_sec = 0;
@@ -239,43 +236,124 @@ void initSensors() {
   if (!bmp.begin()) Serial.println(F("[BMP] Init failed"));
 }
 
-// Try to connect to one network within WIFI_PER_NET_TIMEOUT ms.
-bool tryWifi(const WifiNetwork& net) {
-  Serial.printf("[WiFi] Trying \"%s\" ... ", net.ssid);
-  WiFi.begin(net.ssid, net.pass);
-  unsigned long t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis()-t0 < WIFI_PER_NET_TIMEOUT) {
-    delay(300); Serial.print('.');
+void loadWifiCredentials() {
+  if (LittleFS.exists("/wifi.json")) {
+    File f = LittleFS.open("/wifi.json", "r");
+    if (f) {
+      StaticJsonDocument<256> doc;
+      if (!deserializeJson(doc, f)) {
+        staSSID = doc["ssid"] | "";
+        staPass = doc["pass"] | "";
+      }
+      f.close();
+    }
   }
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.printf(" OK -> %s\n", WiFi.localIP().toString().c_str());
-    return true;
+}
+
+void saveWifiCredentials(const String& ssid, const String& pass) {
+  File f = LittleFS.open("/wifi.json", "w");
+  if (f) {
+    StaticJsonDocument<256> doc;
+    doc["ssid"] = ssid;
+    doc["pass"] = pass;
+    serializeJson(doc, f);
+    f.close();
   }
-  Serial.println(F(" fail"));
-  WiFi.disconnect();
-  return false;
+}
+
+void startAPMode() {
+  isAPMode = true;
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP(AP_SSID, AP_PASS);
+  dnsServer.start(53, "*", WiFi.softAPIP());
+  Serial.printf("[AP] Access Point started: %s (IP: %s)\n", AP_SSID, WiFi.softAPIP().toString().c_str());
 }
 
 void initWiFi() {
-  WiFi.mode(WIFI_STA);
-  // Walk the network list; on failure, fall through to the next.
-  bool connected = false;
-  for (uint8_t i = 0; i < WIFI_NET_COUNT; i++) {
-    wifiNetIndex = i;
-    if (tryWifi(WIFI_NETWORKS[i])) { connected = true; break; }
-  }
-  // As a last resort, retry from the primary once more (transient failure).
-  if (!connected) {
-    Serial.println(F("[WiFi] No network yet — retrying primary"));
-    wifiNetIndex = 0;
-    connected = tryWifi(WIFI_NETWORKS[0]);
-  }
-  if (connected) {
-    if (MDNS.begin("esp2display")) Serial.println(F("[mDNS] esp2display.local"));
+  loadWifiCredentials();
+  
+  if (staSSID.length() > 0) {
+    Serial.printf("[WiFi] Connecting to saved network \"%s\" ... ", staSSID.c_str());
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(staSSID.c_str(), staPass.c_str());
+    
+    unsigned long t0 = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - t0 < 12000UL) {
+      delay(300); Serial.print('.');
+    }
+    
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.printf(" Connected! IP: %s\n", WiFi.localIP().toString().c_str());
+      if (MDNS.begin("esp2display")) Serial.println(F("[mDNS] esp2display.local"));
+      configTime(gmtOffset_sec, daylightOffset_sec, "pool.ntp.org", "time.nist.gov");
+      return;
+    }
+    Serial.println(F(" Connection failed!"));
   } else {
-    Serial.println(F("[WiFi] All networks failed — offline"));
+    Serial.println(F("[WiFi] No saved credentials found."));
   }
-  configTime(gmtOffset_sec, daylightOffset_sec, "pool.ntp.org", "time.nist.gov");
+  
+  startAPMode();
+}
+
+void renderAPScreens() {
+  const TFTPalette& P = getPalette();
+
+  QRCode qrcode;
+  uint8_t qrcodeData[qrcode_getBufferSize(3)];
+  String qrPayload = String("WIFI:S:") + AP_SSID + ";T:WPA;P:" + AP_PASS + ";;";
+  qrcode_initText(&qrcode, qrcodeData, 3, ECC_LOW, qrPayload.c_str());
+
+  // 1. OLED Display (128x64)
+  oled.clearDisplay();
+  oled.setFont(); oled.setTextSize(1); oled.setTextColor(SSD1306_WHITE);
+  
+  // Left: 29x29 QR code scaled 2x = 58x58
+  for (uint8_t y = 0; y < qrcode.size; y++) {
+    for (uint8_t x = 0; x < qrcode.size; x++) {
+      if (qrcode_getModule(&qrcode, x, y)) {
+        oled.fillRect(2 + x * 2, 3 + y * 2, 2, 2, SSD1306_WHITE);
+      }
+    }
+  }
+
+  oled.setCursor(64, 2);  oled.print(F("HOTSPOT"));
+  oled.drawLine(64, 11, 128, 11, SSD1306_WHITE);
+  oled.setCursor(64, 15); oled.print(F("SSID:"));
+  oled.setCursor(64, 25); oled.print(F("chaos-ST"));
+  oled.setCursor(64, 38); oled.print(F("IP:"));
+  oled.setCursor(64, 48); oled.print(F("192.168.4.1"));
+  oled.display();
+
+  // 2. ST7735 TFT Display (128x160)
+  tft.fillScreen(P.bg);
+  tft.fillRect(0, 0, tft.width(), 18, P.card);
+  tft.drawFastHLine(0, 18, tft.width(), P.border);
+  tft.setFont(); tft.setTextSize(1);
+  tft.setTextColor(P.accent, P.card);
+  tft.setCursor(14, 5); tft.print(F("HOTSPOT SETUP"));
+
+  int qrScale = 3; // 29 * 3 = 87 px
+  int qrX = (tft.width() - (qrcode.size * qrScale)) / 2;
+  int qrY = 24;
+
+  // White padding container behind QR code
+  tft.fillRect(qrX - 4, qrY - 4, (qrcode.size * qrScale) + 8, (qrcode.size * qrScale) + 8, NORD6);
+  for (uint8_t y = 0; y < qrcode.size; y++) {
+    for (uint8_t x = 0; x < qrcode.size; x++) {
+      uint16_t col = qrcode_getModule(&qrcode, x, y) ? NORD0 : NORD6;
+      tft.fillRect(qrX + x * qrScale, qrY + y * qrScale, qrScale, qrScale, col);
+    }
+  }
+
+  int textY = qrY + (qrcode.size * qrScale) + 8;
+  tft.setTextColor(P.text, P.bg);
+  tft.setCursor(4, textY);       tft.print(F("Scan to Connect AP:"));
+  tft.setTextColor(P.teal, P.bg);
+  tft.setCursor(4, textY + 11);  tft.printf("SSID: %s", AP_SSID);
+  tft.setCursor(4, textY + 21);  tft.printf("PASS: %s", AP_PASS);
+  tft.setTextColor(P.yellow, P.bg);
+  tft.setCursor(4, textY + 33);  tft.printf("IP:   %s", WiFi.softAPIP().toString().c_str());
 }
 
 void initFS() {
@@ -447,19 +525,22 @@ void handlePostPomodoro() {
   server.send(200,F("application/json"),F("{\"status\":\"success\"}"));
 }
 
-// ---- NEW: Current status (page, pomodoro, theme, rssi) ----
+// ---- Current status (page, pomodoro, theme, rssi, apMode, ip) ----
 void handleGetStatus() {
-  StaticJsonDocument<128> doc;
+  StaticJsonDocument<256> doc;
   doc["page"]          = tftPage;
   doc["pomodoroActive"]= pomodoroActive;
   long rem = pomodoroActive ? max(0L,(long)pomodoroEndTime-(long)millis()) : 0L;
   doc["pomodoroRemSec"]= (int)(rem/1000);
   doc["theme"]         = tftThemeIndex;
-  doc["rssi"]          = WiFi.RSSI();
+  doc["rssi"]          = isAPMode ? 0 : WiFi.RSSI();
+  doc["isAPMode"]      = isAPMode;
+  doc["ip"]            = isAPMode ? WiFi.softAPIP().toString() : WiFi.localIP().toString();
+  doc["ssid"]          = isAPMode ? String(AP_SSID) : (WiFi.status() == WL_CONNECTED ? WiFi.SSID() : "");
   String j; serializeJson(doc,j); server.send(200,F("application/json"),j);
 }
 
-// ---- NEW: Jump to a specific TFT page from web ----
+// ---- Jump to a specific TFT page from web ----
 void handlePostPage() {
   if (!server.hasArg("plain")) { server.send(400,F("application/json"),F("{\"status\":\"error\"}")); return; }
   StaticJsonDocument<64> doc;
@@ -467,6 +548,46 @@ void handlePostPage() {
   int pg=doc["page"]|-1;
   if (pg>=0 && pg<10) { tftPage=pg; lastPageChange=millis(); }
   server.send(200,F("application/json"),F("{\"status\":\"success\"}"));
+}
+
+// ---- Wi-Fi Provisioning Handlers ----
+void handleWifiScan() {
+  int n = WiFi.scanNetworks();
+  StaticJsonDocument<1024> doc;
+  JsonArray arr = doc.to<JsonArray>();
+  for (int i = 0; i < n; ++i) {
+    JsonObject net = arr.createNestedObject();
+    net["ssid"]   = WiFi.SSID(i);
+    net["rssi"]   = WiFi.RSSI(i);
+    net["secure"] = (WiFi.encryptionType(i) != WIFI_AUTH_OPEN);
+  }
+  String j; serializeJson(doc, j);
+  server.send(200, F("application/json"), j);
+}
+
+void handleWifiSave() {
+  if (!server.hasArg("plain")) { server.send(400, F("application/json"), F("{\"status\":\"error\"}")); return; }
+  StaticJsonDocument<256> doc;
+  if (deserializeJson(doc, server.arg("plain"))) { server.send(400, F("application/json"), F("{\"status\":\"error\"}")); return; }
+  
+  String ssid = doc["ssid"] | "";
+  String pass = doc["pass"] | "";
+  
+  if (ssid.length() > 0) {
+    saveWifiCredentials(ssid, pass);
+    server.send(200, F("application/json"), F("{\"status\":\"success\",\"message\":\"Credentials saved. Rebooting...\"}"));
+    delay(1000);
+    ESP.restart();
+  } else {
+    server.send(400, F("application/json"), F("{\"status\":\"error\",\"message\":\"SSID cannot be empty\"}"));
+  }
+}
+
+void handleWifiReset() {
+  if (LittleFS.exists("/wifi.json")) LittleFS.remove("/wifi.json");
+  server.send(200, F("application/json"), F("{\"status\":\"success\",\"message\":\"Saved Wi-Fi cleared. Rebooting into AP mode...\"}"));
+  delay(1000);
+  ESP.restart();
 }
 
 // =================================================================
@@ -1295,63 +1416,76 @@ void setup() {
   server.serveStatic("/style.css", LittleFS, "/style.css");
   server.serveStatic("/app.js",    LittleFS, "/app.js");
 
-  server.on("/api/data",     HTTP_GET,  handleDataJson);
-  server.on("/api/history",  HTTP_GET,  handleHistoryCSV);
-  server.on("/api/settings", HTTP_GET,  handleGetSettings);
-  server.on("/api/settings", HTTP_POST, handlePostSettings);
-  server.on("/api/notes",    HTTP_GET,  handleGetNotes);
-  server.on("/api/notes",    HTTP_POST, handlePostNotes);
-  server.on("/api/pomodoro", HTTP_POST, handlePostPomodoro);
-  server.on("/api/status",   HTTP_GET,  handleGetStatus);   // NEW
-  server.on("/api/page",     HTTP_POST, handlePostPage);    // NEW
+  server.on("/api/data",      HTTP_GET,  handleDataJson);
+  server.on("/api/history",   HTTP_GET,  handleHistoryCSV);
+  server.on("/api/settings",  HTTP_GET,  handleGetSettings);
+  server.on("/api/settings",  HTTP_POST, handlePostSettings);
+  server.on("/api/notes",     HTTP_GET,  handleGetNotes);
+  server.on("/api/notes",     HTTP_POST, handlePostNotes);
+  server.on("/api/pomodoro",  HTTP_POST, handlePostPomodoro);
+  server.on("/api/status",    HTTP_GET,  handleGetStatus);
+  server.on("/api/page",      HTTP_POST, handlePostPage);
+  server.on("/api/wifi/scan",  HTTP_GET,  handleWifiScan);
+  server.on("/api/wifi/save",  HTTP_POST, handleWifiSave);
+  server.on("/api/wifi/reset", HTTP_POST, handleWifiReset);
 
   server.begin(); Serial.println(F("[HTTP] Server ready"));
   refreshSensors(); logData(); lastLogTime=millis();
+
+  if (isAPMode) {
+    renderAPScreens();
+  }
 }
 
 // =================================================================
 // ---- Loop ----
 // =================================================================
 void loop() {
+  if (isAPMode) {
+    dnsServer.processNextRequest();
+  }
+
   server.handleClient();
 
-  static unsigned long lastWifiCheck=0;
-  if (millis()-lastWifiCheck>30000UL) {
-    lastWifiCheck=millis();
-    if (WiFi.status()!=WL_CONNECTED) {
-      // Drop the current network and fail over to the next one in the list.
-      Serial.println(F("[WiFi] Lost connection — failing over"));
-      WiFi.disconnect();
-      wifiNetIndex = (wifiNetIndex + 1) % WIFI_NET_COUNT;   // rotate to next network
-      if (tryWifi(WIFI_NETWORKS[wifiNetIndex])) {
-        Serial.printf("[WiFi] Recovered via \"%s\"\n", WIFI_NETWORKS[wifiNetIndex].ssid);
-      } else {
-        Serial.println(F("[WiFi] Failover failed — will retry next cycle"));
+  if (!isAPMode) {
+    static unsigned long lastWifiCheck=0;
+    if (millis()-lastWifiCheck>30000UL) {
+      lastWifiCheck=millis();
+      if (WiFi.status()!=WL_CONNECTED) {
+        Serial.println(F("[WiFi] Connection lost — attempting reconnect..."));
+        WiFi.reconnect();
       }
     }
   }
 
   bool pageChanged=false;
-  if (tftCarouselEnabled) {
-    if (millis()-lastPageChange>(unsigned long)tftCarouselSpeed) {
-      lastPageChange=millis();
-      int en=0; for (int i=0;i<10;i++) if(pageEnabled[i]) en++;
-      if (en>0) {
-        int orig=tftPage;
-        do { tftPage=(tftPage+1)%10; } while (!pageEnabled[tftPage]&&tftPage!=orig);
-        if (tftPage!=orig) pageChanged=true;
+  if (!isAPMode) {
+    if (tftCarouselEnabled) {
+      if (millis()-lastPageChange>(unsigned long)tftCarouselSpeed) {
+        lastPageChange=millis();
+        int en=0; for (int i=0;i<10;i++) if(pageEnabled[i]) en++;
+        if (en>0) {
+          int orig=tftPage;
+          do { tftPage=(tftPage+1)%10; } while (!pageEnabled[tftPage]&&tftPage!=orig);
+          if (tftPage!=orig) pageChanged=true;
+        }
       }
-    }
-  } else {
-    if (!pageEnabled[tftPage]) {
-      for (int i=0;i<10;i++) { if(pageEnabled[i]) { tftPage=i; pageChanged=true; break; } }
+    } else {
+      if (!pageEnabled[tftPage]) {
+        for (int i=0;i<10;i++) { if(pageEnabled[i]) { tftPage=i; pageChanged=true; break; } }
+      }
     }
   }
 
   static unsigned long lastRefresh=0;
   if (millis()-lastRefresh>2000UL||pageChanged) {
     lastRefresh=millis();
-    refreshSensors(); renderOLED(); renderTFT(pageChanged);
+    refreshSensors();
+    if (isAPMode) {
+      renderAPScreens();
+    } else {
+      renderOLED(); renderTFT(pageChanged);
+    }
   }
   if (millis()-lastLogTime>LOG_INTERVAL) { lastLogTime=millis(); logData(); }
 }

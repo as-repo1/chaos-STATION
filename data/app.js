@@ -736,6 +736,102 @@ applyThemeClass(0); // Set default while loading
 renderTFTPages();
 initChart();
 
+// =================================================================
+// ---- Wi-Fi Provisioning
+// =================================================================
+async function scanWifiNetworks() {
+  const btn = document.getElementById('scan-wifi-btn');
+  const select = document.getElementById('wifi-ssids');
+  const status = document.getElementById('wifi-status');
+  if (!select) return;
+  
+  if (btn) btn.disabled = true;
+  select.innerHTML = '<option value="">Scanning for networks...</option>';
+  
+  try {
+    const res = await fetch('/api/wifi/scan');
+    if (res.ok) {
+      const networks = await res.json();
+      select.innerHTML = '';
+      if (networks.length === 0) {
+        select.innerHTML = '<option value="">No networks found</option>';
+      } else {
+        networks.forEach(net => {
+          const opt = document.createElement('option');
+          opt.value = net.ssid;
+          opt.textContent = `${net.ssid} (${net.rssi} dBm) ${net.secure ? '🔒' : '🔓'}`;
+          select.appendChild(opt);
+        });
+      }
+      showStatus(status, `Found ${networks.length} networks`);
+    } else {
+      select.innerHTML = '<option value="">Failed to scan</option>';
+      showStatus(status, 'Scan failed', true);
+    }
+  } catch(e) {
+    select.innerHTML = '<option value="">Scan error</option>';
+    showStatus(status, 'Network error', true);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function saveWifiCredentials() {
+  const select = document.getElementById('wifi-ssids');
+  const passInput = document.getElementById('wifi-pass');
+  const status = document.getElementById('wifi-status');
+  
+  const ssid = select ? select.value : '';
+  const pass = passInput ? passInput.value : '';
+  
+  if (!ssid) {
+    showStatus(status, 'Please select or enter an SSID', true);
+    return;
+  }
+  
+  showStatus(status, 'Saving & connecting...');
+  try {
+    const res = await fetch('/api/wifi/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ssid, pass })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showStatus(status, data.message || 'Saved! Reconnecting...');
+    } else {
+      showStatus(status, data.message || 'Failed to save', true);
+    }
+  } catch(e) {
+    showStatus(status, 'Network error', true);
+  }
+}
+
+async function resetWifiCredentials() {
+  const status = document.getElementById('wifi-status');
+  if (!confirm('Are you sure you want to forget Wi-Fi credentials and return to Hotspot Mode?')) return;
+  
+  try {
+    const res = await fetch('/api/wifi/reset', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok) {
+      showStatus(status, data.message || 'Reset complete! Rebooting...');
+    } else {
+      showStatus(status, 'Reset failed', true);
+    }
+  } catch(e) {
+    showStatus(status, 'Network error', true);
+  }
+}
+
+// Bind Wi-Fi buttons
+const scanBtn = document.getElementById('scan-wifi-btn');
+const saveWBtn = document.getElementById('save-wifi-btn');
+const resetWBtn = document.getElementById('reset-wifi-btn');
+if (scanBtn) scanBtn.addEventListener('click', scanWifiNetworks);
+if (saveWBtn) saveWBtn.addEventListener('click', saveWifiCredentials);
+if (resetWBtn) resetWBtn.addEventListener('click', resetWifiCredentials);
+
 // Sequence
 (async function init() {
   await loadSettings();
