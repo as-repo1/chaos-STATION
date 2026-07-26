@@ -719,46 +719,109 @@ void renderOLED() {
 }
 
 // =================================================================
-// ---- TFT Graphics Primitives ----
+// ---- TFT Graphics Primitives & UI Helpers ----
 // =================================================================
-void drawArc(int cx,int cy,int r,int thick,float pct,uint16_t col) {
-  float end=(pct/100.0f)*360.0f;
-  for (int t=0;t<thick;t++) {
-    int rad=r-t;
-    for (float a=0.0f;a<end;a+=2.0f) {
-      float rd=(a-90.0f)*(float)M_PI/180.0f;
-      tft.drawPixel(cx+(int)(rad*cosf(rd)),cy+(int)(rad*sinf(rd)),col);
+
+// 3-Bar Wi-Fi Signal Icon (x, y)
+void drawWifiSignal(int x, int y, int rssi, uint16_t activeCol, uint16_t mutedCol) {
+  int bars = 0;
+  if (rssi >= -65)      bars = 3;
+  else if (rssi >= -78) bars = 2;
+  else if (rssi >= -90) bars = 1;
+
+  tft.fillRect(x,     y + 6, 2, 3, (bars >= 1) ? activeCol : mutedCol);
+  tft.fillRect(x + 3, y + 3, 2, 6, (bars >= 2) ? activeCol : mutedCol);
+  tft.fillRect(x + 6, y,     2, 9, (bars >= 3) ? activeCol : mutedCol);
+}
+
+// Rounded Card Container
+void drawCard(int x, int y, int w, int h, uint16_t bgCol, uint16_t borderCol, int r = 4) {
+  tft.fillRoundRect(x, y, w, h, r, bgCol);
+  if (borderCol != bgCol) {
+    tft.drawRoundRect(x, y, w, h, r, borderCol);
+  }
+}
+
+// Smooth Arc Drawing
+void drawArc(int cx, int cy, int r, int thick, float pct, uint16_t col) {
+  float end = (pct / 100.0f) * 360.0f;
+  for (int t = 0; t < thick; t++) {
+    int rad = r - t;
+    for (float a = 0.0f; a < end; a += 2.0f) {
+      float rd = (a - 90.0f) * (float)M_PI / 180.0f;
+      tft.drawPixel(cx + (int)(rad * cosf(rd)), cy + (int)(rad * sinf(rd)), col);
     }
   }
 }
-inline void drawArcTrack(int cx,int cy,int r,int thick,uint16_t col) { drawArc(cx,cy,r,thick,100.0f,col); }
+inline void drawArcTrack(int cx, int cy, int r, int thick, uint16_t col) { drawArc(cx, cy, r, thick, 100.0f, col); }
 
-void drawAnalogDial(int cx,int cy,int r,float temp,uint16_t needleCol,const TFTPalette& P) {
-  for (int d=-135;d<=135;d+=27) {
-    float rd=(d-90.0f)*(float)M_PI/180.0f;
-    tft.drawLine(cx+(int)(r*cosf(rd)),cy+(int)(r*sinf(rd)),cx+(int)((r-4)*cosf(rd)),cy+(int)((r-4)*sinf(rd)),P.border);
+// Segmented Circular Dial Gauge
+void drawAnalogDial(int cx, int cy, int r, float temp, uint16_t needleCol, const TFTPalette& P) {
+  for (int d = -135; d <= 135; d += 27) {
+    float rd = (d - 90.0f) * (float)M_PI / 180.0f;
+    tft.drawLine(cx + (int)(r * cosf(rd)), cy + (int)(r * sinf(rd)),
+                 cx + (int)((r - 5) * cosf(rd)), cy + (int)((r - 5) * sinf(rd)), P.border);
   }
-  for (int d=-135;d<=135;d+=54) {
-    float rd=(d-90.0f)*(float)M_PI/180.0f;
-    tft.drawLine(cx+(int)(r*cosf(rd)),cy+(int)(r*sinf(rd)),cx+(int)((r-8)*cosf(rd)),cy+(int)((r-8)*sinf(rd)),P.text);
+  for (int d = -135; d <= 135; d += 54) {
+    float rd = (d - 90.0f) * (float)M_PI / 180.0f;
+    tft.drawLine(cx + (int)(r * cosf(rd)), cy + (int)(r * sinf(rd)),
+                 cx + (int)((r - 8) * cosf(rd)), cy + (int)((r - 8) * sinf(rd)), P.accent);
   }
-  float angle=constrain(-135.0f+((temp+10.0f)/60.0f)*270.0f,-135.0f,135.0f);
-  float rd=(angle-90.0f)*(float)M_PI/180.0f;
-  int ex=cx+(int)((r-10)*cosf(rd)),ey=cy+(int)((r-10)*sinf(rd));
-  tft.drawLine(cx,cy,ex,ey,needleCol);
-  tft.drawLine(cx-1,cy,ex,ey,needleCol);
-  tft.drawLine(cx+1,cy,ex,ey,needleCol);
-  tft.fillCircle(cx,cy,4,needleCol);
-  tft.fillCircle(cx,cy,2,P.bg);
+  float angle = constrain(-135.0f + ((temp + 10.0f) / 60.0f) * 270.0f, -135.0f, 135.0f);
+  float rd = (angle - 90.0f) * (float)M_PI / 180.0f;
+  int ex = cx + (int)((r - 10) * cosf(rd)), ey = cy + (int)((r - 10) * sinf(rd));
+  tft.drawLine(cx, cy, ex, ey, needleCol);
+  tft.drawLine(cx - 1, cy, ex, ey, needleCol);
+  tft.drawLine(cx + 1, cy, ex, ey, needleCol);
+  tft.fillCircle(cx, cy, 4, needleCol);
+  tft.fillCircle(cx, cy, 2, P.bg);
 }
 
-void drawAnimatedSun(int cx,int cy,int r,float off,uint16_t col) {
-  tft.fillCircle(cx,cy,r,col);
-  tft.fillCircle(cx,cy,r-3,NORD13);
-  for (int i=0;i<360;i+=45) {
-    float rd=(i+off)*(float)M_PI/180.0f;
-    tft.drawLine(cx+(int)((r+2)*cosf(rd)),cy+(int)((r+2)*sinf(rd)),
-                 cx+(int)((r+7)*cosf(rd)),cy+(int)((r+7)*sinf(rd)),col);
+// Animated Sun rays
+void drawAnimatedSun(int cx, int cy, int r, float off, uint16_t col) {
+  tft.fillCircle(cx, cy, r, col);
+  tft.fillCircle(cx, cy, r - 3, NORD13);
+  for (int i = 0; i < 360; i += 45) {
+    float rd = (i + off) * (float)M_PI / 180.0f;
+    tft.drawLine(cx + (int)((r + 2) * cosf(rd)), cy + (int)((r + 2) * sinf(rd)),
+                 cx + (int)((r + 7) * cosf(rd)), cy + (int)((r + 7) * sinf(rd)), col);
+  }
+}
+
+// Global Header Bar Renderer
+void drawTopHeader(const TFTPalette& P, bool hasTime, struct tm* ti) {
+  tft.fillRect(0, 0, tft.width(), 16, P.card);
+  tft.drawFastHLine(0, 16, tft.width(), P.border);
+  tft.setFont(); tft.setTextSize(1);
+
+  // Wi-Fi Icon & Signal
+  drawWifiSignal(3, 4, WiFi.RSSI(), P.teal, P.border);
+
+  // Active Page Indicator Pill (e.g., 01/10)
+  int activeDot = 0, curIdx = 0;
+  for (int i = 0; i < 10; i++) {
+    if (pageEnabled[i]) {
+      activeDot++;
+      if (i == tftPage) curIdx = activeDot;
+    }
+  }
+  if (activeDot > 1) {
+    char ps[8]; snprintf(ps, 8, "%02d/%02d", curIdx, activeDot);
+    int px = (tft.width() / 2) - ((int)(strlen(ps) * 6) / 2);
+    tft.fillRoundRect(px - 3, 2, strlen(ps) * 6 + 6, 12, 3, P.raised);
+    tft.setTextColor(P.accent, P.raised);
+    tft.setCursor(px, 4); tft.print(ps);
+  }
+
+  // Live Time Readout
+  if (hasTime) {
+    char ts[8]; snprintf(ts, 8, "%02d:%02d", ti->tm_hour, ti->tm_min);
+    tft.setTextColor(P.text, P.card);
+    tft.setCursor(tft.width() - (int)(strlen(ts) * 6) - 3, 4);
+    tft.print(ts);
+  } else {
+    tft.setTextColor(P.muted, P.card);
+    tft.setCursor(tft.width() - 30, 4); tft.print(F("--:--"));
   }
 }
 
@@ -770,160 +833,190 @@ void renderTFT(bool forceClear) {
 
   if (forceClear) tft.fillScreen(P.bg);
 
-  struct tm ti; const bool hasTime=getLocalTime(&ti);
+  struct tm ti;
+  const bool hasTime = getLocalTime(&ti);
 
-  // ---- Global top bar ----
-  tft.fillRect(0,0,tft.width(),15,P.card);
-  tft.drawFastHLine(0,15,tft.width(),P.border);
-  tft.setFont(); tft.setTextSize(1);
+  drawTopHeader(P, hasTime, &ti);
 
-  tft.setTextColor(P.accent,P.card);
-  tft.setCursor(3,4);
-  if (hasTime) {
-    char d[10]; strftime(d,10,"%a %e",&ti); tft.print(d);
-  } else { tft.print(F("--")); }
-
-  int activeDot=0,curIdx=0;
-  for (int i=0;i<10;i++) { if (pageEnabled[i]) { activeDot++; if(i==tftPage) curIdx=activeDot; } }
-  if (activeDot>1) {
-    char ps[8]; snprintf(ps,8,"%d/%d",curIdx,activeDot);
-    int px=(tft.width()/2)-((int)(strlen(ps)*6)/2);
-    tft.setTextColor(P.muted,P.card); tft.setCursor(px,4); tft.print(ps);
-  }
-  if (hasTime) {
-    char ts[8]; snprintf(ts,8,"%02d:%02d",ti.tm_hour,ti.tm_min);
-    tft.setTextColor(P.text,P.card);
-    tft.setCursor(tft.width()-(int)(strlen(ts)*6)-3,4); tft.print(ts);
-  }
-
-  const int TOP=17;
+  const int TOP = 18;
 
   switch (tftPage) {
 
     // ==============================================================
-    case 0: { // Dashboard
+    case 0: { // Dashboard — Split Hero Layout
     // ==============================================================
       if (forceClear) {
-        tft.setFont(); tft.setTextSize(1); tft.setTextColor(P.border,P.bg);
-        tft.setCursor(14,TOP+90); tft.print(F("HUMIDITY"));
-        tft.setCursor(80,TOP+90); tft.print(F("PRESS"));
+        // Static background cards for Humidity and Pressure
+        drawCard(3,  TOP + 95, 59, 28, P.card, P.border, 6);
+        drawCard(66, TOP + 95, 59, 28, P.card, P.border, 6);
+        tft.setFont(); tft.setTextSize(1);
+        tft.setTextColor(P.muted, P.card);
+        tft.setCursor(14, TOP + 98); tft.print(F("HUMIDITY"));
+        tft.setCursor(77, TOP + 98); tft.print(F("PRESSURE"));
       }
-      tft.fillRect(28,TOP,73,72,P.bg);
-      animAngle+=12.0f; if (animAngle>=360.0f) animAngle-=360.0f;
-      float ph=state.pressBME/100.0f;
-      if (ph>1015.0f) {
-        drawAnimatedSun(64,TOP+35,11,animAngle,P.orange);
-      } else if (ph>1000.0f) {
-        tft.fillCircle(52,TOP+40,9,P.blue); tft.fillCircle(64,TOP+32,13,P.blue);
-        tft.fillCircle(76,TOP+40,9,P.blue); tft.fillRect(52,TOP+36,25,13,P.blue);
-        tft.fillCircle(64,TOP+32,10,P.accent); tft.fillRect(61,TOP+32,8,8,P.accent);
+
+      // Animated Weather Visualizer
+      tft.fillRect(28, TOP + 2, 72, 60, P.bg);
+      animAngle += 12.0f; if (animAngle >= 360.0f) animAngle -= 360.0f;
+      float ph = state.pressBME / 100.0f;
+      if (ph > 1015.0f) {
+        drawAnimatedSun(64, TOP + 30, 12, animAngle, P.yellow);
+      } else if (ph > 1000.0f) {
+        tft.fillCircle(52, TOP + 34, 9, P.blue); tft.fillCircle(64, TOP + 26, 13, P.blue);
+        tft.fillCircle(76, TOP + 34, 9, P.blue); tft.fillRect(52, TOP + 30, 25, 13, P.blue);
+        tft.fillCircle(64, TOP + 26, 10, P.accent); tft.fillRect(61, TOP + 26, 8, 8, P.accent);
       } else {
-        tft.fillCircle(52,TOP+37,9,P.dblue); tft.fillCircle(64,TOP+29,13,P.dblue);
-        tft.fillCircle(76,TOP+37,9,P.dblue); tft.fillRect(52,TOP+33,25,13,P.dblue);
-        int ro=(int)(animAngle/36)%7;
-        for (int dd=0;dd<3;dd++) { int dx=50+dd*12; tft.drawLine(dx,TOP+50+ro,dx-2,TOP+58+ro,P.accent); }
+        tft.fillCircle(52, TOP + 32, 9, P.dblue); tft.fillCircle(64, TOP + 24, 13, P.dblue);
+        tft.fillCircle(76, TOP + 32, 9, P.dblue); tft.fillRect(52, TOP + 28, 25, 13, P.dblue);
+        int ro = (int)(animAngle / 36) % 7;
+        for (int dd = 0; dd < 3; dd++) {
+          int dx = 50 + dd * 12;
+          tft.drawLine(dx, TOP + 44 + ro, dx - 2, TOP + 52 + ro, P.accent);
+        }
       }
-      tft.fillRect(0,TOP+72,128,22,P.bg);
-      char tb[10]; snprintf(tb,10,"%.1f",state.tempBME);
-      tft.setFont(&FreeSans18pt7b); tft.setTextColor(P.yellow,P.bg);
-      int16_t bx,by; uint16_t bw,bh;
-      tft.getTextBounds(tb,0,0,&bx,&by,&bw,&bh);
-      int tx=(128-(int)bw)/2; tft.setCursor(tx,TOP+90); tft.print(tb);
-      tft.drawCircle(tx+(int)bw+5,TOP+73,3,P.yellow); tft.drawCircle(tx+(int)bw+5,TOP+73,2,P.yellow);
-      // Humidity pill
-      tft.fillRoundRect(3,TOP+96,58,26,6,P.card); tft.drawRoundRect(3,TOP+96,58,26,6,P.blue);
-      char hb[8]; snprintf(hb,8,"%d%%",(int)state.humDHT);
-      tft.getTextBounds(hb,0,0,&bx,&by,&bw,&bh);
-      tft.setTextColor(P.accent,P.card); tft.setFont(&FreeSans12pt7b);
-      tft.setCursor(32-(int)(bw/2),TOP+115); tft.print(hb);
-      // Pressure pill
-      tft.fillRoundRect(67,TOP+96,58,26,6,P.card); tft.drawRoundRect(67,TOP+96,58,26,6,P.blue);
-      char pb[8]; snprintf(pb,8,"%d",(int)(state.pressBME/100.0f));
-      tft.getTextBounds(pb,0,0,&bx,&by,&bw,&bh);
-      tft.setTextColor(P.green,P.card); tft.setCursor(96-(int)(bw/2),TOP+115); tft.print(pb);
+
+      // Focal Temperature Display
+      tft.fillRect(0, TOP + 64, 128, 28, P.bg);
+      char tb[10]; snprintf(tb, 10, "%.1f", state.tempBME);
+      tft.setFont(&FreeSans18pt7b); tft.setTextColor(P.text, P.bg);
+      int16_t bx, by; uint16_t bw, bh;
+      tft.getTextBounds(tb, 0, 0, &bx, &by, &bw, &bh);
+      int tx = (128 - (int)bw) / 2 - 4;
+      tft.setCursor(tx, TOP + 88); tft.print(tb);
+      tft.drawCircle(tx + (int)bw + 4, TOP + 68, 3, P.accent);
+      tft.drawCircle(tx + (int)bw + 4, TOP + 68, 2, P.accent);
+
+      // Humidity Dynamic Value
+      char hb[8]; snprintf(hb, 8, "%d%%", (int)state.humDHT);
+      tft.setFont(&FreeSans9pt7b);
+      tft.getTextBounds(hb, 0, 0, &bx, &by, &bw, &bh);
+      tft.setTextColor(P.teal, P.card);
+      tft.setCursor(32 - (int)(bw / 2), TOP + 118); tft.print(hb);
+
+      // Pressure Dynamic Value
+      char pb[8]; snprintf(pb, 8, "%d", (int)ph);
+      tft.getTextBounds(pb, 0, 0, &bx, &by, &bw, &bh);
+      tft.setTextColor(P.green, P.card);
+      tft.setCursor(95 - (int)(bw / 2), TOP + 118); tft.print(pb);
+
       tft.setFont();
       break;
     }
 
     // ==============================================================
-    case 1: { // Analog Temp Dial
+    case 1: { // Temp Dial — Multi-Segmented Gauge
     // ==============================================================
-      int cx=tft.width()/2,cy=97,r=44;
+      int cx = tft.width() / 2, cy = 98, r = 44;
       if (forceClear) {
-        tft.setFont(&FreeSans9pt7b); tft.setTextColor(P.accent,P.bg);
-        tft.setCursor(16,TOP+16); tft.print(F("TEMPERATURE"));
-        tft.drawCircle(cx,cy,r+3,P.raised); tft.drawCircle(cx,cy,r+4,P.border);
+        drawCard(8, TOP + 2, 112, 16, P.card, P.border, 4);
+        tft.setFont(); tft.setTextSize(1);
+        tft.setTextColor(P.accent, P.card); tft.setCursor(14, TOP + 6); tft.print(F("TEMP DIAL"));
       }
-      tft.fillCircle(cx,cy,r+2,P.bg);
-      drawAnalogDial(cx,cy,r,state.tempBME,P.red,P);
-      char vb[10]; snprintf(vb,10,"%.1f",state.tempBME);
+
+      // High / Low Banner inside Header Card
+      tft.setFont(); tft.setTextSize(1);
+      tft.setTextColor(P.orange, P.card);
+      tft.setCursor(68, TOP + 6);
+      tft.printf("H:%.0f", state.tempHigh == -100.0f ? state.tempBME : state.tempHigh);
+      tft.setTextColor(P.blue, P.card);
+      tft.setCursor(96, TOP + 6);
+      tft.printf("L:%.0f", state.tempLow == 100.0f ? state.tempBME : state.tempLow);
+
+      // Clear Dial Canvas
+      tft.fillCircle(cx, cy, r + 4, P.bg);
+      tft.drawCircle(cx, cy, r + 3, P.raised);
+      tft.drawCircle(cx, cy, r + 4, P.border);
+
+      // Draw Needle & Tickmarks
+      drawAnalogDial(cx, cy, r, state.tempBME, P.red, P);
+
+      // Focal Digital Temperature Readout in Center
+      char vb[10]; snprintf(vb, 10, "%.1f", state.tempBME);
       tft.setFont(&FreeSansBold12pt7b);
-      int16_t bx,by; uint16_t bw,bh;
-      tft.getTextBounds(vb,0,0,&bx,&by,&bw,&bh);
-      tft.setTextColor(P.yellow,P.bg); tft.setCursor(cx-(int)(bw/2)-4,cy+28); tft.print(vb);
-      tft.setFont(); tft.setTextColor(P.text,P.bg); tft.setCursor(cx+(int)(bw/2)-2,cy+18); tft.print(F("\xF8" "C"));
-      tft.setTextSize(1); tft.setTextColor(P.border,P.bg);
-      tft.setCursor(cx-r+1,cy+r-8); tft.print(F("-10"));
-      tft.setCursor(cx+r-14,cy+r-8); tft.print(F("50"));
-      tft.fillRoundRect(10,TOP+3,108,13,4,P.card); tft.setTextColor(P.orange,P.card);
-      tft.setCursor(14,TOP+7); tft.printf("H:%.1f",state.tempHigh==-100.0f?state.tempBME:state.tempHigh);
-      tft.setTextColor(P.blue,P.card); tft.setCursor(76,TOP+7);
-      tft.printf("L:%.1f",state.tempLow==100.0f?state.tempBME:state.tempLow);
+      int16_t bx, by; uint16_t bw, bh;
+      tft.getTextBounds(vb, 0, 0, &bx, &by, &bw, &bh);
+      tft.setTextColor(P.yellow, P.bg);
+      tft.setCursor(cx - (int)(bw / 2) - 4, cy + 28); tft.print(vb);
+
+      tft.setFont(); tft.setTextColor(P.text, P.bg);
+      tft.setCursor(cx + (int)(bw / 2) - 2, cy + 18); tft.print(F("\xF8" "C"));
+
+      tft.setTextSize(1); tft.setTextColor(P.muted, P.bg);
+      tft.setCursor(cx - r + 2, cy + r - 8); tft.print(F("-10"));
+      tft.setCursor(cx + r - 14, cy + r - 8); tft.print(F("50"));
       break;
     }
 
     // ==============================================================
-    case 2: { // Atmosphere Arc Rings
+    case 2: { // Atmosphere HUD — Concentric Arc Meters
     // ==============================================================
       if (forceClear) {
-        tft.setFont(&FreeSans9pt7b); tft.setTextColor(P.accent,P.bg);
-        tft.setCursor(22,TOP+16); tft.print(F("ATMOSPHERE"));
+        drawCard(8, TOP + 2, 112, 16, P.card, P.border, 4);
+        tft.setFont(); tft.setTextSize(1);
+        tft.setTextColor(P.accent, P.card);
+        tft.setCursor(14, TOP + 6); tft.print(F("ATMOSPHERE HUD"));
       }
-      int cx=tft.width()/2,cy=94;
-      tft.fillRect(5,TOP+20,tft.width()-10,118,P.bg);
-      drawArcTrack(cx,cy,46,7,P.raised);
-      drawArc(cx,cy,46,7,constrain(state.humDHT,0.0f,100.0f),P.accent);
-      float ph=state.pressBME/100.0f;
-      float pp=constrain(((ph-900.0f)/200.0f)*100.0f,0.0f,100.0f);
-      drawArcTrack(cx,cy,34,7,P.raised);
-      drawArc(cx,cy,34,7,pp,P.dblue);
+
+      int cx = tft.width() / 2, cy = 94;
+      tft.fillRect(4, TOP + 20, tft.width() - 8, 118, P.bg);
+
+      // Outer Arc: Humidity
+      drawArcTrack(cx, cy, 46, 7, P.raised);
+      drawArc(cx, cy, 46, 7, constrain(state.humDHT, 0.0f, 100.0f), P.accent);
+
+      // Inner Arc: Barometric Pressure
+      float ph = state.pressBME / 100.0f;
+      float pp = constrain(((ph - 900.0f) / 200.0f) * 100.0f, 0.0f, 100.0f);
+      drawArcTrack(cx, cy, 34, 7, P.raised);
+      drawArc(cx, cy, 34, 7, pp, P.dblue);
+
+      // Center Values Readout
       tft.setFont(); tft.setTextSize(1);
-      tft.setTextColor(P.accent,P.bg); tft.setCursor(cx-14,cy-12); tft.printf("%.0f%%",state.humDHT);
-      tft.drawFastHLine(cx-12,cy,24,P.border);
-      tft.setTextColor(P.dblue,P.bg); tft.setCursor(cx-17,cy+5); tft.printf("%.0f",ph);
-      tft.setTextColor(P.muted,P.bg);
-      tft.setCursor(6,cy+55); tft.print(F("HUM"));
-      tft.setCursor(98,cy+55); tft.print(F("hPa"));
-      tft.fillRoundRect(10,cy+62,108,14,4,P.card); tft.setTextColor(P.accent,P.card);
-      tft.setCursor(14,cy+67); tft.printf("Hum %.0f%%  Press %.0f",state.humDHT,ph);
+      tft.setTextColor(P.accent, P.bg); tft.setCursor(cx - 14, cy - 12); tft.printf("%.0f%%", state.humDHT);
+      tft.drawFastHLine(cx - 12, cy, 24, P.border);
+      tft.setTextColor(P.dblue, P.bg); tft.setCursor(cx - 17, cy + 5); tft.printf("%.0f", ph);
+
+      tft.setTextColor(P.muted, P.bg);
+      tft.setCursor(6, cy + 55); tft.print(F("HUM"));
+      tft.setCursor(98, cy + 55); tft.print(F("hPa"));
+
+      // Bottom Summary Card
+      drawCard(8, cy + 62, 112, 16, P.card, P.border, 4);
+      tft.setTextColor(P.teal, P.card);
+      tft.setCursor(12, cy + 66);
+      tft.printf("Hum %.0f%%  Press %.0f", state.humDHT, ph);
       break;
     }
 
     // ==============================================================
-    case 3: { // Notes
+    case 3: { // Notes — Command Notepad
     // ==============================================================
       if (forceClear) {
-        tft.fillRoundRect(2,TOP,tft.width()-4,20,5,P.dblue);
-        tft.setFont(&FreeSans9pt7b); tft.setTextColor(P.text,P.dblue);
-        tft.setCursor(8,TOP+14); tft.print(F("NOTES"));
-        tft.fillRect(tft.width()-18,TOP+4,12,2,P.accent);
-        tft.fillRect(tft.width()-18,TOP+8,12,2,P.accent);
-        tft.fillRect(tft.width()-18,TOP+12,8,2,P.accent);
+        drawCard(2, TOP, tft.width() - 4, 18, P.dblue, P.border, 4);
+        tft.setFont(&FreeSans9pt7b); tft.setTextColor(P.text, P.dblue);
+        tft.setCursor(8, TOP + 13); tft.print(F("NOTES"));
+        tft.fillRect(tft.width() - 18, TOP + 4, 12, 2, P.accent);
+        tft.fillRect(tft.width() - 18, TOP + 8, 12, 2, P.accent);
+        tft.fillRect(tft.width() - 18, TOP + 12, 8, 2, P.accent);
       }
-      tft.fillRoundRect(2,TOP+22,tft.width()-4,tft.height()-TOP-24,5,P.card);
-      tft.drawRoundRect(2,TOP+22,tft.width()-4,tft.height()-TOP-24,5,P.border);
+
+      drawCard(2, TOP + 20, tft.width() - 4, tft.height() - TOP - 22, P.card, P.border, 4);
       tft.setFont(); tft.setTextSize(notesFontSize); tft.setTextWrap(false);
-      if (tftNotes.length()==0) {
-        tft.setTextColor(P.border,P.card); tft.setCursor(10,TOP+32); tft.print(F("No notes yet."));
+      if (tftNotes.length() == 0) {
+        tft.setTextColor(P.muted, P.card);
+        tft.setCursor(10, TOP + 32); tft.print(F("No notes saved."));
       } else {
-        tft.setTextColor(P.text,P.card);
-        int cx2=8,cy2=TOP+30; tft.setCursor(cx2,cy2);
-        for (size_t i=0;i<tftNotes.length();i++) {
-          char c=tftNotes[i];
-          if (c=='\n'||cx2+(6*notesFontSize)>tft.width()-8) {
-            cy2+=8*notesFontSize+2; cx2=8; tft.setCursor(cx2,cy2); if (c=='\n') continue;
+        tft.setTextColor(P.text, P.card);
+        int cx2 = 8, cy2 = TOP + 28;
+        tft.setCursor(cx2, cy2);
+        for (size_t i = 0; i < tftNotes.length(); i++) {
+          char c = tftNotes[i];
+          if (c == '\n' || cx2 + (6 * notesFontSize) > tft.width() - 8) {
+            cy2 += 8 * notesFontSize + 2; cx2 = 8;
+            tft.setCursor(cx2, cy2);
+            if (c == '\n') continue;
           }
-          tft.print(c); cx2+=6*notesFontSize;
+          tft.print(c); cx2 += 6 * notesFontSize;
         }
       }
       tft.setTextSize(1); tft.setFont();
@@ -931,27 +1024,36 @@ void renderTFT(bool forceClear) {
     }
 
     // ==============================================================
-    case 4: { // Tasks / To-Do
+    case 4: { // Tasks / To-Do Checklist
     // ==============================================================
       if (forceClear) {
-        tft.fillRoundRect(2,TOP,tft.width()-4,20,5,P.purple);
-        tft.setFont(&FreeSans9pt7b); tft.setTextColor(P.text,P.purple);
-        tft.setCursor(8,TOP+14); tft.print(F("TASKS"));
-        tft.setFont(); char bg[5]; snprintf(bg,5,"%d/5",todoCount);
-        tft.setTextColor(P.text,P.purple); tft.setCursor(tft.width()-26,TOP+6); tft.print(bg);
+        drawCard(2, TOP, tft.width() - 4, 18, P.purple, P.border, 4);
+        tft.setFont(&FreeSans9pt7b); tft.setTextColor(P.text, P.purple);
+        tft.setCursor(8, TOP + 13); tft.print(F("TASKS"));
+        tft.setFont();
+        char bg[8]; snprintf(bg, 8, "%d/5", todoCount);
+        tft.setTextColor(P.text, P.purple);
+        tft.setCursor(tft.width() - 28, TOP + 5); tft.print(bg);
       }
-      tft.fillRect(2,TOP+22,tft.width()-4,tft.height()-TOP-24,P.bg);
+
+      tft.fillRect(2, TOP + 20, tft.width() - 4, tft.height() - TOP - 22, P.bg);
       tft.setFont(); tft.setTextSize(todoFontSize);
-      if (todoCount==0) {
-        tft.setTextColor(P.border,P.bg); tft.setCursor(10,TOP+32); tft.print(F("All done! :)"));
+      if (todoCount == 0) {
+        tft.setTextColor(P.muted, P.bg);
+        tft.setCursor(10, TOP + 32); tft.print(F("All tasks done! :)"));
       } else {
-        int y=TOP+26,lh=(7*todoFontSize)+9;
-        for (int i=0;i<todoCount;i++) {
-          tft.drawRoundRect(5,y,6*todoFontSize,6*todoFontSize,1,P.accent);
-          tft.setTextColor(P.text,P.bg); tft.setCursor(8+(8*todoFontSize),y+1);
-          tft.print(tftTodos[i].substring(0,(todoFontSize==1)?18:9));
-          y+=lh;
-          if (i<todoCount-1) tft.drawFastHLine(4,y-3,tft.width()-8,P.raised);
+        int y = TOP + 24, lh = (7 * todoFontSize) + 9;
+        for (int i = 0; i < todoCount; i++) {
+          // Custom checkbox icon
+          drawCard(5, y, 9, 9, P.card, P.accent, 2);
+          tft.drawLine(6, y + 4, 8, y + 7, P.teal);
+          tft.drawLine(8, y + 7, 12, y + 2, P.teal);
+
+          tft.setTextColor(P.text, P.bg);
+          tft.setCursor(18, y + 1);
+          tft.print(tftTodos[i].substring(0, (todoFontSize == 1) ? 16 : 9));
+          y += lh;
+          if (i < todoCount - 1) tft.drawFastHLine(4, y - 3, tft.width() - 8, P.border);
         }
       }
       tft.setTextSize(1); tft.setFont();
@@ -959,71 +1061,91 @@ void renderTFT(bool forceClear) {
     }
 
     // ==============================================================
-    case 5: { // Barometric Forecast
+    case 5: { // Barometric Forecast HUD
     // ==============================================================
       if (forceClear) {
-        tft.fillRoundRect(2,TOP,tft.width()-4,20,5,P.blue);
-        tft.setFont(&FreeSans9pt7b); tft.setTextColor(P.text,P.blue);
-        tft.setCursor(8,TOP+14); tft.print(F("FORECAST"));
+        drawCard(2, TOP, tft.width() - 4, 18, P.blue, P.border, 4);
+        tft.setFont(&FreeSans9pt7b); tft.setTextColor(P.text, P.blue);
+        tft.setCursor(8, TOP + 13); tft.print(F("FORECAST"));
       }
-      tft.fillRect(2,TOP+22,tft.width()-4,tft.height()-TOP-24,P.bg);
-      float ph=state.pressBME/100.0f;
+
+      tft.fillRect(2, TOP + 20, tft.width() - 4, tft.height() - TOP - 22, P.bg);
+      float ph = state.pressBME / 100.0f;
       const char* ws; uint16_t wc;
-      if (ph<1000.0f) { ws="RAINY"; wc=P.accent; }
-      else if (ph>1020.0f) { ws="CLEAR"; wc=P.yellow; }
-      else { ws="FAIR"; wc=P.green; }
-      tft.setFont(&FreeSansBold12pt7b); tft.setTextColor(wc,P.bg);
-      int16_t bx,by; uint16_t bw,bh;
-      tft.getTextBounds(ws,0,0,&bx,&by,&bw,&bh);
-      tft.setCursor((tft.width()-(int)bw)/2,TOP+52); tft.print(ws);
-      tft.drawBitmap((tft.width()-16)/2,TOP+56,(ph>1020.0f)?bmp_thermometer:bmp_cloud,16,16,wc);
+      if (ph < 1000.0f)       { ws = "RAINY"; wc = P.accent; }
+      else if (ph > 1020.0f)  { ws = "CLEAR"; wc = P.yellow; }
+      else                    { ws = "FAIR";  wc = P.green; }
+
+      // Hero Forecast Badge
+      tft.setFont(&FreeSansBold12pt7b); tft.setTextColor(wc, P.bg);
+      int16_t bx, by; uint16_t bw, bh;
+      tft.getTextBounds(ws, 0, 0, &bx, &by, &bw, &bh);
+      tft.setCursor((tft.width() - (int)bw) / 2, TOP + 50); tft.print(ws);
+      tft.drawBitmap((tft.width() - 16) / 2, TOP + 54, (ph > 1020.0f) ? bmp_thermometer : bmp_cloud, 16, 16, wc);
+
       tft.setFont(); tft.setTextSize(1);
-      tft.fillRoundRect(5,TOP+78,56,18,5,P.card); tft.setTextColor(P.orange,P.card);
-      tft.setCursor(10,TOP+83); tft.printf("H: %.1fC",state.tempHigh==-100.0f?state.tempBME:state.tempHigh);
-      tft.fillRoundRect(67,TOP+78,56,18,5,P.card); tft.setTextColor(P.accent,P.card);
-      tft.setCursor(72,TOP+83); tft.printf("L: %.1fC",state.tempLow==100.0f?state.tempBME:state.tempLow);
-      tft.fillRoundRect(8,TOP+102,tft.width()-16,16,8,P.raised);
-      float pf=constrain((ph-900.0f)/200.0f,0.0f,1.0f);
-      int bw2=(int)((tft.width()-20)*pf);
-      if (bw2>0) tft.fillRoundRect(9,TOP+103,bw2,14,7,P.dblue);
-      tft.setTextColor(P.text,P.bg); tft.setCursor(12,TOP+122); tft.printf("%.1f hPa",ph);
+
+      // Min/Max Temperature Pills
+      drawCard(5,  TOP + 76, 56, 18, P.card, P.border, 4);
+      tft.setTextColor(P.orange, P.card);
+      tft.setCursor(9, TOP + 81);
+      tft.printf("H: %.1fC", state.tempHigh == -100.0f ? state.tempBME : state.tempHigh);
+
+      drawCard(67, TOP + 76, 56, 18, P.card, P.border, 4);
+      tft.setTextColor(P.accent, P.card);
+      tft.setCursor(71, TOP + 81);
+      tft.printf("L: %.1fC", state.tempLow == 100.0f ? state.tempBME : state.tempLow);
+
+      // Pressure Barometer Progress Bar
+      drawCard(8, TOP + 100, tft.width() - 16, 14, P.raised, P.border, 6);
+      float pf = constrain((ph - 900.0f) / 200.0f, 0.0f, 1.0f);
+      int bw2 = (int)((tft.width() - 20) * pf);
+      if (bw2 > 0) tft.fillRoundRect(9, TOP + 101, bw2, 12, 5, P.dblue);
+
+      tft.setTextColor(P.text, P.bg);
+      tft.setCursor(12, TOP + 120); tft.printf("%.1f hPa", ph);
       tft.setFont();
       break;
     }
 
     // ==============================================================
-    case 6: { // Smart Clock
+    case 6: { // Smart Cyber Clock Dashboard
     // ==============================================================
       if (forceClear) {
-        tft.drawRoundRect(2,2,tft.width()-4,tft.height()-4,10,P.border);
-        tft.drawRoundRect(3,3,tft.width()-6,tft.height()-6,9,P.raised);
+        tft.drawRoundRect(2, 2, tft.width() - 4, tft.height() - 4, 8, P.border);
+        tft.drawRoundRect(3, 3, tft.width() - 6, tft.height() - 6, 7, P.raised);
       }
-      tft.fillRoundRect(4,16,tft.width()-8,tft.height()-20,7,P.bg);
+      tft.fillRoundRect(4, 17, tft.width() - 8, tft.height() - 21, 6, P.bg);
+
       if (hasTime) {
-        char ws[16]; snprintf(ws,16,"WiFi %d dB",WiFi.RSSI());
-        int sw=(int)(strlen(ws)*6);
-        tft.fillRoundRect((tft.width()-sw-10)/2,TOP+2,sw+10,13,6,P.card);
-        tft.setFont(); tft.setTextColor(P.accent,P.card);
-        tft.setCursor((tft.width()-sw)/2,TOP+5); tft.print(ws);
-        char ts[8]; snprintf(ts,8,"%02d:%02d",ti.tm_hour,ti.tm_min);
-        tft.setFont(&FreeSans18pt7b); tft.setTextColor(P.text,P.bg);
-        int16_t bx,by; uint16_t bw,bh;
-        tft.getTextBounds(ts,0,0,&bx,&by,&bw,&bh);
-        tft.setCursor((tft.width()-(int)bw)/2,TOP+58); tft.print(ts);
+        // Large Focal Time Readout
+        char ts[8]; snprintf(ts, 8, "%02d:%02d", ti.tm_hour, ti.tm_min);
+        tft.setFont(&FreeSans18pt7b); tft.setTextColor(P.text, P.bg);
+        int16_t bx, by; uint16_t bw, bh;
+        tft.getTextBounds(ts, 0, 0, &bx, &by, &bw, &bh);
+        tft.setCursor((tft.width() - (int)bw) / 2, TOP + 48); tft.print(ts);
+
+        // Seconds Line Progress Bar
         tft.setFont();
-        tft.drawFastHLine(10,TOP+62,tft.width()-20,P.raised);
-        int sf=(tft.width()-20)*ti.tm_sec/59;
-        if (sf>0) tft.drawFastHLine(10,TOP+62,sf,P.accent);
-        tft.fillCircle(10+sf,TOP+62,2,P.accent);
-        char ds[20]; strftime(ds,20,"%A, %b %d",&ti);
-        tft.setFont(&FreeSans9pt7b); tft.setTextColor(P.teal,P.bg);
-        tft.getTextBounds(ds,0,0,&bx,&by,&bw,&bh);
-        tft.setCursor((tft.width()-(int)bw)/2,TOP+80); tft.print(ds);
-        tft.setFont();
-        tft.fillRoundRect(10,TOP+88,50,24,10,P.card); tft.setTextColor(P.orange,P.card);
-        tft.setCursor(16,TOP+96); tft.printf("%.1f\xF8" "C",state.tempBME);
-        tft.fillRoundRect(68,TOP+88,50,24,10,P.card); tft.setTextColor(P.accent,P.card);
-        tft.setCursor(74,TOP+96); tft.printf("%.0f%%",state.humDHT);
+        tft.drawFastHLine(10, TOP + 54, tft.width() - 20, P.raised);
+        int sf = (tft.width() - 20) * ti.tm_sec / 59;
+        if (sf > 0) tft.drawFastHLine(10, TOP + 54, sf, P.accent);
+        tft.fillCircle(10 + sf, TOP + 54, 2, P.accent);
+
+        // Date Banner
+        char ds[20]; strftime(ds, 20, "%A, %b %d", &ti);
+        tft.setFont(&FreeSans9pt7b); tft.setTextColor(P.teal, P.bg);
+        tft.getTextBounds(ds, 0, 0, &bx, &by, &bw, &bh);
+        tft.setCursor((tft.width() - (int)bw) / 2, TOP + 74); tft.print(ds);
+
+        // Bottom Mini Sensor Badges
+        drawCard(10, TOP + 84, 52, 24, P.card, P.border, 6);
+        tft.setFont(); tft.setTextColor(P.orange, P.card);
+        tft.setCursor(15, TOP + 92); tft.printf("%.1f\xF8" "C", state.tempBME);
+
+        drawCard(66, TOP + 84, 52, 24, P.card, P.border, 6);
+        tft.setTextColor(P.teal, P.card);
+        tft.setCursor(72, TOP + 92); tft.printf("%.0f%%", state.humDHT);
       }
       tft.setFont();
       break;
@@ -1033,68 +1155,79 @@ void renderTFT(bool forceClear) {
     case 7: { // System Terminal
     // ==============================================================
       if (forceClear) {
-        tft.fillRoundRect(2,TOP,tft.width()-4,tft.height()-TOP-2,4,P.bg);
-        tft.drawRoundRect(2,TOP,tft.width()-4,tft.height()-TOP-2,4,P.border);
-        tft.fillRoundRect(2,TOP,tft.width()-4,16,4,P.card);
-        tft.drawFastHLine(2,TOP+16,tft.width()-4,P.border);
-        tft.fillCircle(13,TOP+8,4,P.red);
-        tft.fillCircle(25,TOP+8,4,P.yellow);
-        tft.fillCircle(37,TOP+8,4,P.green);
-        tft.setFont(); tft.setTextColor(P.muted,P.card);
-        tft.setCursor(50,TOP+4); tft.print(F("esp32-sys"));
+        drawCard(2, TOP, tft.width() - 4, tft.height() - TOP - 2, P.bg, P.border, 4);
+        drawCard(2, TOP, tft.width() - 4, 16, P.card, P.border, 4);
+        tft.fillCircle(10, TOP + 8, 3, P.red);
+        tft.fillCircle(20, TOP + 8, 3, P.yellow);
+        tft.fillCircle(30, TOP + 8, 3, P.green);
+        tft.setFont(); tft.setTextColor(P.muted, P.card);
+        tft.setCursor(42, TOP + 4); tft.print(F("esp32-sys"));
       }
-      tft.fillRect(4,TOP+18,tft.width()-8,tft.height()-TOP-22,P.bg);
+
+      tft.fillRect(4, TOP + 18, tft.width() - 8, tft.height() - TOP - 22, P.bg);
       tft.setFont(); tft.setTextSize(1);
-      int ty=TOP+22;
-      tft.setTextColor(P.green,P.bg); tft.setCursor(4,ty); tft.print(F("root@esp32:~$")); ty+=12;
-      tft.setTextColor(P.accent,P.bg);
-      tft.setCursor(4,ty); tft.printf("ip:   %s",WiFi.localIP().toString().c_str()); ty+=10;
-      tft.setCursor(4,ty); tft.printf("rssi: %d dBm",WiFi.RSSI()); ty+=10;
-      uint32_t up=millis()/1000;
-      tft.setCursor(4,ty); tft.printf("up:   %02dh%02dm%02ds",up/3600,(up%3600)/60,up%60); ty+=10;
-      tft.setCursor(4,ty); tft.printf("heap: %.1f KB",ESP.getFreeHeap()/1024.0f); ty+=10;
-      tft.setTextColor(P.blue,P.bg); tft.setCursor(4,ty); tft.printf("mac:  %s",WiFi.macAddress().c_str()); ty+=12;
-      tft.setTextColor(P.yellow,P.bg); tft.setCursor(4,ty);
-      tft.print((millis()/500)%2==0?F("> _"):F(">  "));
+      int ty = TOP + 22;
+      tft.setTextColor(P.green, P.bg);
+      tft.setCursor(4, ty); tft.print(F("root@esp32:~$")); ty += 12;
+
+      tft.setTextColor(P.accent, P.bg);
+      tft.setCursor(4, ty); tft.printf("ip:   %s", WiFi.localIP().toString().c_str()); ty += 10;
+      tft.setCursor(4, ty); tft.printf("rssi: %d dBm", WiFi.RSSI()); ty += 10;
+
+      uint32_t up = millis() / 1000;
+      tft.setCursor(4, ty); tft.printf("up:   %02dh%02dm%02ds", up / 3600, (up % 3600) / 60, up % 60); ty += 10;
+      tft.setCursor(4, ty); tft.printf("heap: %.1f KB", ESP.getFreeHeap() / 1024.0f); ty += 10;
+
+      tft.setTextColor(P.blue, P.bg);
+      tft.setCursor(4, ty); tft.printf("mac:  %s", WiFi.macAddress().c_str()); ty += 12;
+
+      tft.setTextColor(P.yellow, P.bg);
+      tft.setCursor(4, ty);
+      tft.print((millis() / 500) % 2 == 0 ? F("> _") : F(">  "));
       break;
     }
 
     // ==============================================================
-    case 8: { // Pomodoro Timer
+    case 8: { // Pomodoro Focus Hub
     // ==============================================================
       if (forceClear) {
-        tft.setFont(&FreeSans9pt7b); tft.setTextColor(P.accent,P.bg);
-        tft.setCursor(22,TOP+16); tft.print(F("POMODORO"));
+        drawCard(8, TOP + 2, 112, 16, P.card, P.border, 4);
+        tft.setFont(); tft.setTextSize(1);
+        tft.setTextColor(P.accent, P.card);
+        tft.setCursor(14, TOP + 6); tft.print(F("POMODORO HUB"));
       }
-      tft.fillRect(4,TOP+18,tft.width()-8,tft.height()-TOP-22,P.bg);
-      int cx=tft.width()/2,cy=92;
+
+      tft.fillRect(4, TOP + 20, tft.width() - 8, tft.height() - TOP - 22, P.bg);
+      int cx = tft.width() / 2, cy = 92;
+
       if (!pomodoroActive) {
-        drawArcTrack(cx,cy,38,9,P.raised);
-        tft.setFont(&FreeSans9pt7b); tft.setTextColor(P.accent,P.bg);
-        int16_t bx,by; uint16_t bw,bh;
-        tft.getTextBounds("READY",0,0,&bx,&by,&bw,&bh);
-        tft.setCursor(cx-(int)(bw/2),cy+6); tft.print(F("READY"));
-        tft.setFont(); tft.setTextColor(P.border,P.bg);
-        tft.setCursor(14,cy+28); tft.print(F("Start via web UI"));
+        drawArcTrack(cx, cy, 38, 8, P.raised);
+        tft.setFont(&FreeSans9pt7b); tft.setTextColor(P.accent, P.bg);
+        int16_t bx, by; uint16_t bw, bh;
+        tft.getTextBounds("READY", 0, 0, &bx, &by, &bw, &bh);
+        tft.setCursor(cx - (int)(bw / 2), cy + 6); tft.print(F("READY"));
+        tft.setFont(); tft.setTextColor(P.muted, P.bg);
+        tft.setCursor(14, cy + 28); tft.print(F("Start via Web UI"));
       } else {
-        long rem=(long)pomodoroEndTime-(long)millis();
-        if (rem<=0) {
-          pomodoroActive=false;
-          drawArc(cx,cy,38,9,100.0f,P.green);
-          tft.setFont(&FreeSans9pt7b); tft.setTextColor(P.green,P.bg);
-          int16_t bx,by; uint16_t bw,bh;
-          tft.getTextBounds("DONE!",0,0,&bx,&by,&bw,&bh);
-          tft.setCursor(cx-(int)(bw/2),cy+6); tft.print(F("DONE!"));
+        long rem = (long)pomodoroEndTime - (long)millis();
+        if (rem <= 0) {
+          pomodoroActive = false;
+          drawArc(cx, cy, 38, 8, 100.0f, P.green);
+          tft.setFont(&FreeSans9pt7b); tft.setTextColor(P.green, P.bg);
+          int16_t bx, by; uint16_t bw, bh;
+          tft.getTextBounds("DONE!", 0, 0, &bx, &by, &bw, &bh);
+          tft.setCursor(cx - (int)(bw / 2), cy + 6); tft.print(F("DONE!"));
         } else {
-          int mins=(int)(rem/60000),secs=(int)((rem%60000)/1000);
-          float pct=(float)rem/(25.0f*60000.0f)*100.0f;
-          drawArcTrack(cx,cy,38,9,P.raised);
-          uint16_t ac=(pct>50.0f)?P.red:(pct>20.0f?P.orange:P.green);
-          drawArc(cx,cy,38,9,pct,ac);
-          tft.setFont(); tft.setTextSize(2); tft.setTextColor(P.text,P.bg);
-          tft.setCursor(cx-22,cy-8); tft.printf("%02d:%02d",mins,secs);
-          tft.setTextSize(1); tft.setTextColor(P.muted,P.bg);
-          tft.setCursor(cx-26,cy+20); tft.print(F("remaining"));
+          int mins = (int)(rem / 60000), secs = (int)((rem % 60000) / 1000);
+          float pct = (float)rem / (25.0f * 60000.0f) * 100.0f;
+          drawArcTrack(cx, cy, 38, 8, P.raised);
+          uint16_t ac = (pct > 50.0f) ? P.green : (pct > 20.0f ? P.orange : P.red);
+          drawArc(cx, cy, 38, 8, pct, ac);
+
+          tft.setFont(); tft.setTextSize(2); tft.setTextColor(P.text, P.bg);
+          tft.setCursor(cx - 22, cy - 8); tft.printf("%02d:%02d", mins, secs);
+          tft.setTextSize(1); tft.setTextColor(P.muted, P.bg);
+          tft.setCursor(cx - 26, cy + 18); tft.print(F("remaining"));
         }
       }
       tft.setFont();
@@ -1102,37 +1235,49 @@ void renderTFT(bool forceClear) {
     }
 
     // ==============================================================
-    case 9: { // Hardware Health Graph
+    case 9: { // Hardware Health Graph & Telemetry
     // ==============================================================
       if (forceClear) {
-        tft.fillRoundRect(2,TOP,tft.width()-4,20,4,P.card);
-        tft.setFont(&FreeSans9pt7b); tft.setTextColor(P.accent,P.card);
-        tft.setCursor(8,TOP+14); tft.print(F("HW HEALTH"));
+        drawCard(2, TOP, tft.width() - 4, 18, P.card, P.border, 4);
+        tft.setFont(&FreeSans9pt7b); tft.setTextColor(P.accent, P.card);
+        tft.setCursor(8, TOP + 13); tft.print(F("HW HEALTH"));
       }
-      tft.fillRect(2,TOP+22,tft.width()-4,tft.height()-TOP-24,P.bg);
+
+      tft.fillRect(2, TOP + 20, tft.width() - 4, tft.height() - TOP - 22, P.bg);
       tft.setFont(); tft.setTextSize(1);
-      tft.fillRoundRect(4,TOP+25,60,16,4,P.card); tft.setTextColor(P.accent,P.card);
-      tft.setCursor(8,TOP+29); tft.printf("%.0f KB",ESP.getFreeHeap()/1024.0f);
-      tft.fillRoundRect(68,TOP+25,55,16,4,P.card); tft.setTextColor(P.teal,P.card);
-      tft.setCursor(72,TOP+29); tft.printf("%d dBm",WiFi.RSSI());
-      const int gY=TOP+46,gH=60,gW=tft.width()-16;
-      tft.fillRoundRect(8,gY,gW,gH,3,P.card); tft.drawRoundRect(8,gY,gW,gH,3,P.border);
-      if (histCount>1) {
-        int mx=min((int)histCount,gW-2);
-        for (int i=0;i<mx-1;i++) {
-          int idx=(histHead-mx+i+HISTORY_SIZE)%HISTORY_SIZE;
-          int nxt=(idx+1)%HISTORY_SIZE;
-          float h1=(float)tftHistHeap[idx],h2=(float)tftHistHeap[nxt];
-          int y1=gY+gH-2-(int)(((h1-100000.0f)/200000.0f)*(gH-4));
-          int y2=gY+gH-2-(int)(((h2-100000.0f)/200000.0f)*(gH-4));
-          y1=constrain(y1,gY+1,gY+gH-2); y2=constrain(y2,gY+1,gY+gH-2);
-          tft.drawLine(9+i,y1,10+i,y2,P.accent);
+
+      // RAM Heap & RSSI Pills
+      drawCard(4,  TOP + 23, 58, 16, P.card, P.border, 4);
+      tft.setTextColor(P.accent, P.card);
+      tft.setCursor(8, TOP + 27); tft.printf("%.0f KB", ESP.getFreeHeap() / 1024.0f);
+
+      drawCard(66, TOP + 23, 58, 16, P.card, P.border, 4);
+      tft.setTextColor(P.teal, P.card);
+      tft.setCursor(70, TOP + 27); tft.printf("%d dBm", WiFi.RSSI());
+
+      // Sparkline Graph Container
+      const int gY = TOP + 44, gH = 60, gW = tft.width() - 16;
+      drawCard(8, gY, gW, gH, P.card, P.border, 4);
+
+      if (histCount > 1) {
+        int mx = min((int)histCount, gW - 2);
+        for (int i = 0; i < mx - 1; i++) {
+          int idx = (histHead - mx + i + HISTORY_SIZE) % HISTORY_SIZE;
+          int nxt = (idx + 1) % HISTORY_SIZE;
+          float h1 = (float)tftHistHeap[idx], h2 = (float)tftHistHeap[nxt];
+          int y1 = gY + gH - 2 - (int)(((h1 - 100000.0f) / 200000.0f) * (gH - 4));
+          int y2 = gY + gH - 2 - (int)(((h2 - 100000.0f) / 200000.0f) * (gH - 4));
+          y1 = constrain(y1, gY + 1, gY + gH - 2);
+          y2 = constrain(y2, gY + 1, gY + gH - 2);
+          tft.drawLine(9 + i, y1, 10 + i, y2, P.accent);
         }
       } else {
-        tft.setTextColor(P.border,P.card); tft.setCursor(14,gY+gH/2-4);
+        tft.setTextColor(P.muted, P.card);
+        tft.setCursor(14, gY + gH / 2 - 4);
         tft.print(F("Collecting data..."));
       }
-      tft.setTextColor(P.border,P.bg); tft.setCursor(10,gY+gH+3);
+      tft.setTextColor(P.muted, P.bg);
+      tft.setCursor(10, gY + gH + 3);
       tft.print(F("Heap over time (100 pts)"));
       break;
     }
