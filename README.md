@@ -19,7 +19,7 @@ Welcome to **chaos STATION**, a modern, multi-display, multi-theme Smart Weather
 
 - 🖥️ **Dual Hardware Displays**: 
   - **128x160 TFT LCD (ST7735)**: Rich graphical UI featuring 10 dynamic pages (Dashboard, Temp Dial, Atmosphere Rings, Notes, Tasks, Forecast, Clock, System Terminal, Pomodoro Timer, and Hardware Health).
-  - **128x64 OLED (SSD1306)**: At-a-glance monochrome readout for time, weather basics, and system info.
+  - **128x64 OLED (SSD1306)**: Secondary monochrome display with **10 selectable modes** (Weather, Clock, System, Pomodoro, Forecast, Temp Graph, Notes, Tasks, Analog clock, Binary clock). Switch instantly from the web dashboard.
 - 🌐 **Advanced Web Dashboard**: A glassmorphic, responsive web interface hosted directly on the ESP32 (via LittleFS). Control the TFT remotely, view live sensor gauges, and monitor historical trends via Chart.js.
 - 🎨 **4-Theme Synchronization Engine**: Swap themes on the web dashboard and watch the physical TFT display update in real-time. Choose between:
   - ❄️ **Nord**: A cool, arctic palette with soft pastels.
@@ -146,6 +146,27 @@ graph TD
 
 ---
 
+## 🖥️ OLED Display Modes
+
+The secondary 128×64 OLED is fully configurable from the web dashboard's **Display Settings → OLED Mode**. Ten modes are available:
+
+| Mode | Icon | Name | Description |
+| :--: | :--: | :--- | :--- |
+| 0 | 🌡️ | **Weather** | IN (DHT) / OUT (BMP) split — temp, humidity, pressure. Default. |
+| 1 | 🕐 | **Clock** | Large `HH:MM` digital clock with date and device IP. |
+| 2 | 💻 | **System** | IP, free heap, WiFi RSSI, and uptime readout. |
+| 3 | 🍅 | **Pomodoro** | Live `MM:SS` countdown with a progress bar scaled to the session length. Mirrors the running timer. |
+| 4 | ⛅ | **Forecast** | Barometric verdict (RAIN / FAIR / CLEAR) plus pressure & humidity. |
+| 5 | 📈 | **Temp Graph** | Sparkline of the BMP temperature history buffer with min/H/now legend. |
+| 6 | 📝 | **Notes** | Word-wrapped view of the notes saved to the TFT Notes page. |
+| 7 | ✅ | **Tasks** | Checkbox list of saved tasks with an `n/5` badge. |
+| 8 | ⌚ | **Analog** | Analog clock face with hour/minute hands and a date strip. |
+| 9 | ⠿ | **Binary** | BCD dot-matrix clock — one column per digit. Pairs well with the Coder theme. |
+
+The active mode is persisted in `config.json` and restored on reboot. Notes (mode 6), Tasks (mode 7), and Pomodoro (mode 3) stay in sync with their TFT counterparts automatically.
+
+---
+
 ## 🚀 Quickstart
 
 This project is built using **PlatformIO** and includes a one-click deployment script.
@@ -157,11 +178,14 @@ This project is built using **PlatformIO** and includes a one-click deployment s
    ```
 
 2. **Configure WiFi**:
-   Open `src/main.cpp` and update the WiFi credentials to match your local network:
+   Open `src/main.cpp` and edit the `WIFI_NETWORKS` list. The device tries each network **in order** and falls over to the next automatically if one is unavailable:
    ```cpp
-   const char* WIFI_SSID     = "Your_SSID";
-   const char* WIFI_PASSWORD = "Your_Password";
+   WifiNetwork WIFI_NETWORKS[] = {
+     { "Your_SSID",   "Your_Password" },   // primary
+     { "wifi",        "wifiwifiwifi"  }    // fallback (e.g. a hotspot)
+   };
    ```
+   You can add as many `{ ssid, pass }` pairs as you like. If all fail at boot, it retries the primary; in normal operation it rotates to the next network on any drop.
 
 3. **Deploy the System**:
    Run the automated deployment script to build the firmware and upload the LittleFS dashboard:

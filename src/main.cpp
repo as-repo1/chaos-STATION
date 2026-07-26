@@ -47,9 +47,19 @@
 
 // =================================================================
 // ---- WiFi & NTP ----
+// Multiple networks: tried in order. If the primary is unavailable,
+// the device falls back to the next, then loops back to the primary.
 // =================================================================
-const char* WIFI_SSID     = "Airtel_a204";
-const char* WIFI_PASSWORD = "rahulkhanki";
+struct WifiNetwork { const char* ssid; const char* pass; };
+WifiNetwork WIFI_NETWORKS[] = {
+  { "Airtel_a204",   "rahulkhanki"  },   // primary
+  { "wifi",          "wifiwifiwifi" }    // fallback
+};
+const uint8_t WIFI_NET_COUNT = sizeof(WIFI_NETWORKS)/sizeof(WIFI_NETWORKS[0]);
+uint8_t       wifiNetIndex   = 0;          // network currently in use
+
+// Per-attempt timeout; all networks are tried before giving up.
+const unsigned long WIFI_PER_NET_TIMEOUT = 10000UL;
 
 const long  gmtOffset_sec      = 19800L;  // UTC+5:30
 const int   daylightOffset_sec = 0;
@@ -155,6 +165,12 @@ const unsigned char bmp_cloud[] PROGMEM = {
   0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x7f,0xfe,0x3f,0xfc,0x00,0x00,0x00,0x00
 };
 
+// 3-letter month names for the analog-clock date line
+static const char* const OLED_MONTHS[12] = {
+  "Jan","Feb","Mar","Apr","May","Jun",
+  "Jul","Aug","Sep","Oct","Nov","Dec"
+};
+
 // =================================================================
 // ---- Sensor State ----
 // =================================================================
@@ -194,8 +210,9 @@ String tftNotes    = "";
 String tftTodos[5];
 int    todoCount   = 0;
 
-bool          pomodoroActive  = false;
-unsigned long pomodoroEndTime = 0;
+bool          pomodoroActive   = false;
+unsigned long pomodoroEndTime  = 0;
+int           pomodoroDuration = 25;   // minutes of the currently running session
 
 int           tftPage        = 0;
 unsigned long lastPageChange = 0;
@@ -222,18 +239,41 @@ void initSensors() {
   if (!bmp.begin()) Serial.println(F("[BMP] Init failed"));
 }
 
+// Try to connect to one network within WIFI_PER_NET_TIMEOUT ms.
+bool tryWifi(const WifiNetwork& net) {
+  Serial.printf("[WiFi] Trying \"%s\" ... ", net.ssid);
+  WiFi.begin(net.ssid, net.pass);
+  unsigned long t0 = millis();
+  while (WiFi.status() != WL_CONNECTED && millis()-t0 < WIFI_PER_NET_TIMEOUT) {
+    delay(300); Serial.print('.');
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf(" OK -> %s\n", WiFi.localIP().toString().c_str());
+    return true;
+  }
+  Serial.println(F(" fail"));
+  WiFi.disconnect();
+  return false;
+}
+
 void initWiFi() {
   WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.print(F("[WiFi] Connecting"));
-  unsigned long t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis()-t0 < 15000UL) { delay(500); Serial.print('.'); }
-  Serial.println();
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.print(F("[WiFi] ")); Serial.println(WiFi.localIP());
+  // Walk the network list; on failure, fall through to the next.
+  bool connected = false;
+  for (uint8_t i = 0; i < WIFI_NET_COUNT; i++) {
+    wifiNetIndex = i;
+    if (tryWifi(WIFI_NETWORKS[i])) { connected = true; break; }
+  }
+  // As a last resort, retry from the primary once more (transient failure).
+  if (!connected) {
+    Serial.println(F("[WiFi] No network yet — retrying primary"));
+    wifiNetIndex = 0;
+    connected = tryWifi(WIFI_NETWORKS[0]);
+  }
+  if (connected) {
     if (MDNS.begin("esp2display")) Serial.println(F("[mDNS] esp2display.local"));
   } else {
-    Serial.println(F("[WiFi] Timeout — offline"));
+    Serial.println(F("[WiFi] All networks failed — offline"));
   }
   configTime(gmtOffset_sec, daylightOffset_sec, "pool.ntp.org", "time.nist.gov");
 }
@@ -250,7 +290,7 @@ void initFS() {
     File f = LittleFS.open("/config.json","r");
     StaticJsonDocument<512> doc;
     if (!deserializeJson(doc, f)) {
-      oledMode           = doc["oledMode"]    | oledMode;
+      oledMode           = constrain((int)(doc["oledMode"]|oledMode),0,9);
       tftThemeIndex      = doc["tftTheme"]    | tftThemeIndex;
       tftCarouselEnabled = doc["tftCarousel"] | tftCarouselEnabled;
       tftCarouselSpeed   = doc["tftSpeed"]    | tftCarouselSpeed;
@@ -355,7 +395,7 @@ void handlePostSettings() {
   if (!server.hasArg("plain")) { server.send(400,F("application/json"),F("{\"status\":\"error\"}")); return; }
   StaticJsonDocument<512> doc;
   if (deserializeJson(doc,server.arg("plain"))) { server.send(400,F("application/json"),F("{\"status\":\"error\"}")); return; }
-  oledMode           = doc["oledMode"]    | oledMode;
+  oledMode           = constrain((int)(doc["oledMode"]|oledMode),0,9);
   tftThemeIndex      = constrain((int)(doc["tftTheme"]|tftThemeIndex),0,3);
   tftCarouselEnabled = doc["tftCarousel"] | tftCarouselEnabled;
   tftCarouselSpeed   = doc["tftSpeed"]    | tftCarouselSpeed;
@@ -396,11 +436,13 @@ void handlePostPomodoro() {
   String action=doc["action"]|"";
   if (action=="start") {
     pomodoroActive=true;
-    int mins=doc["duration"]|25;
+    int mins=constrain((int)(doc["duration"]|25),1,120);
+    pomodoroDuration=mins;
     pomodoroEndTime=millis()+(unsigned long)(mins*60000UL);
     if (pageEnabled[8]) { tftPage=8; lastPageChange=millis(); }
   } else if (action=="stop") {
     pomodoroActive=false;
+    pomodoroDuration=25;
   }
   server.send(200,F("application/json"),F("{\"status\":\"success\"}"));
 }
@@ -428,53 +470,251 @@ void handlePostPage() {
 }
 
 // =================================================================
-// ---- OLED Rendering ----
+// ---- OLED Rendering (10 modes: 0-2 original, 3-9 new) ----
+//   0 Weather  1 Clock  2 System  3 Pomodoro  4 Forecast
+//   5 TempGraph 6 Notes  7 Tasks  8 Analog  9 Binary
 // =================================================================
+static const char* const OLED_MODE_NAMES[10] = {
+  "WEATHER","CLOCK","SYSTEM","POMODORO","FORECAST",
+  "TEMP GR","NOTES","TASKS","ANALOG","BINARY"
+};
+
+// Tiny header strip — title left, small clock right.
+inline void oledHeader(const char* title, bool hasTime, const struct tm* ti) {
+  oled.setFont(); oled.setTextSize(1);
+  oled.setCursor(0,0); oled.print(title);
+  if (hasTime) {
+    oled.setCursor(109,0);
+    oled.printf("%02d:%02d", ti->tm_hour, ti->tm_min);
+  }
+  oled.drawLine(0,9,128,9,SSD1306_WHITE);
+}
+
 void renderOLED() {
   oled.clearDisplay();
   struct tm ti; bool hasTime=getLocalTime(&ti);
-  if (oledMode==1) {
-    if (hasTime) {
-      oled.setFont(); oled.setTextSize(1); oled.setCursor(0,0);
-      oled.printf("%02d/%02d/%02d", ti.tm_mday, ti.tm_mon+1, ti.tm_year%100);
-      String ip = WiFi.localIP().toString();
-      oled.setCursor(128 - (ip.length()*6), 0); oled.print(ip);
-      oled.drawLine(0, 10, 128, 10, SSD1306_WHITE);
+
+  switch (oledMode) {
+
+    case 1: { // ---- Big Digital Clock ----
+      if (hasTime) {
+        oled.setFont(); oled.setTextSize(1); oled.setCursor(0,0);
+        oled.printf("%02d/%02d/%02d", ti.tm_mday, ti.tm_mon+1, ti.tm_year%100);
+        String ip = WiFi.localIP().toString();
+        oled.setCursor(128 - (ip.length()*6), 0); oled.print(ip);
+        oled.drawLine(0, 10, 128, 10, SSD1306_WHITE);
+        oled.setFont(&FreeSans18pt7b); oled.setCursor(2,45);
+        oled.printf("%02d:%02d",ti.tm_hour,ti.tm_min);
+        oled.setFont(); oled.setCursor(102,18); oled.printf("%02d",ti.tm_sec);
+      } else { oled.setFont(); oled.setCursor(0,20); oled.print(F("Waiting NTP...")); }
+      break;
+    }
+
+    case 2: { // ---- System Info ----
+      oled.setFont(); oled.setTextSize(1);
+      oled.setCursor(0,0);  oled.print(F("--- SYS INFO ---"));
+      oled.setCursor(0,15); oled.print(F("IP: ")); oled.print(WiFi.localIP());
+      oled.setCursor(0,28); oled.printf("Heap: %d KB",ESP.getFreeHeap()/1024);
+      oled.setCursor(0,41); oled.printf("RSSI: %d dBm",WiFi.RSSI());
+      uint32_t up=millis()/1000;
+      oled.setCursor(0,54); oled.printf("Up: %dh %dm",up/3600,(up%3600)/60);
+      break;
+    }
+
+    case 3: { // ---- Pomodoro ----
+      oledHeader("POMODORO",hasTime,&ti);
       oled.setFont(&FreeSans18pt7b); oled.setCursor(2,45);
-      oled.printf("%02d:%02d",ti.tm_hour,ti.tm_min);
-      oled.setFont(); oled.setCursor(102,18); oled.printf("%02d",ti.tm_sec);
-    } else { oled.setFont(); oled.setCursor(0,20); oled.print(F("Waiting NTP...")); }
-  } else if (oledMode==2) {
-    oled.setFont(); oled.setTextSize(1);
-    oled.setCursor(0,0);  oled.print(F("--- SYS INFO ---"));
-    oled.setCursor(0,15); oled.print(F("IP: ")); oled.print(WiFi.localIP());
-    oled.setCursor(0,28); oled.printf("Heap: %d KB",ESP.getFreeHeap()/1024);
-    oled.setCursor(0,41); oled.printf("RSSI: %d dBm",WiFi.RSSI());
-    uint32_t up=millis()/1000;
-    oled.setCursor(0,54); oled.printf("Up: %dh %dm",up/3600,(up%3600)/60);
-  } else {
-    oled.setFont(); oled.setTextSize(1);
-    oled.setCursor(0,0);
-    if (hasTime) {
-      String ip=WiFi.localIP().toString();
-      oled.printf("%02d:%02d:%02d .%s",ti.tm_hour,ti.tm_min,ti.tm_sec,
-        ip.substring(ip.lastIndexOf('.')+1).c_str());
-    } else { oled.print(F("Wait NTP")); }
-    oled.drawLine(0,10,128,10,SSD1306_WHITE);
-    oled.setCursor(15,14); oled.print(F("IN"));
-    oled.drawLine(0,23,60,23,SSD1306_WHITE);
-    oled.drawBitmap(0,27,bmp_thermometer,16,16,SSD1306_WHITE);
-    oled.setCursor(18,31); oled.printf("%.1f C",state.tempDHT);
-    oled.drawBitmap(0,47,bmp_droplet,16,16,SSD1306_WHITE);
-    oled.setCursor(18,51); oled.printf("%.0f %%",state.humDHT);
-    oled.drawLine(64,12,64,64,SSD1306_WHITE);
-    oled.setCursor(85,14); oled.print(F("OUT"));
-    oled.drawLine(68,23,128,23,SSD1306_WHITE);
-    oled.drawBitmap(68,27,bmp_thermometer,16,16,SSD1306_WHITE);
-    oled.setCursor(86,31); oled.printf("%.1f C",state.tempBME);
-    oled.drawBitmap(68,47,bmp_cloud,16,16,SSD1306_WHITE);
-    oled.setCursor(86,51); oled.printf("%.0f hP",state.pressBME/100.0f);
-  }
+      if (!pomodoroActive) { oled.printf("%02d:00",pomodoroDuration); oled.setFont(); }
+      else {
+        long rem=(long)pomodoroEndTime-(long)millis();
+        if (rem<=0) {
+          oled.setTextColor(SSD1306_BLACK,SSD1306_WHITE);
+          oled.printf("DONE!");
+          oled.setTextColor(SSD1306_WHITE,SSD1306_BLACK);
+          oled.setFont();
+        } else {
+          int mins=(int)(rem/60000),secs=(int)((rem%60000)/1000);
+          oled.printf("%02d:%02d",mins,secs); oled.setFont();
+          // progress bar (segment of pomodoroDuration)
+          unsigned long total=(unsigned long)pomodoroDuration*60000UL;
+          unsigned long elapsed=total-(unsigned long)rem;
+          int bw=constrain((int)((elapsed*110UL)/total),0,110);
+          if (bw>0) {
+            oled.fillRect(9,50,bw,6,SSD1306_WHITE);
+            oled.drawRect(9,50,110,6,SSD1306_WHITE);
+          } else oled.drawRect(9,50,110,6,SSD1306_WHITE);
+        }
+      }
+      oled.setTextSize(1); oled.setTextColor(SSD1306_WHITE,SSD1306_BLACK);
+      if (!pomodoroActive) { oled.setCursor(40,57); oled.print(F("READY")); }
+      break;
+    }
+
+    case 4: { // ---- Barometric Forecast ----
+      oledHeader("FORECAST",hasTime,&ti);
+      float ph=state.pressBME/100.0f;
+      const char* ws;
+      if      (ph<1000.0f) ws="RAIN";
+      else if (ph>1020.0f) ws="CLEAR";
+      else                 ws="FAIR";
+      oled.setFont(&FreeSans18pt7b); oled.setCursor(2,45); oled.print(ws); oled.setFont();
+      oled.setCursor(2,57); oled.printf("%dm %d%%", (int)ph, (int)state.humDHT);
+      oled.setCursor(78,22); oled.print(F("Press:"));
+      oled.setCursor(78,33); oled.printf("%dhPa",(int)ph);
+      break;
+    }
+
+    case 5: { // ---- Temperature Sparkline (history) ----
+      oledHeader("TEMP HISTORY",hasTime,&ti);
+      if (histCount<2) {
+        oled.setFont(); oled.setCursor(20,32); oled.print(F("Collecting..."));
+      } else {
+        float mn=1e9f, mx=-1e9f;
+        for (int i=0;i<histCount;i++) {
+          float v=tftHistTemp[i];
+          if (v<mn) mn=v; if (v>mx) mx=v;
+        }
+        if (mx-mn<0.5f) { mx+=0.5f; mn-=0.5f; }
+        const int gx=2, gy=12, gw=124, gh=44;
+        oled.drawRect(gx,gy,gw,gh,SSD1306_WHITE);
+        int n=min((int)histCount,gw-2);
+        int start=(histHead-n+HISTORY_SIZE)%HISTORY_SIZE;
+        for (int i=0;i<n-1;i++) {
+          int a=(start+i)%HISTORY_SIZE, b=(a+1)%HISTORY_SIZE;
+          int y1=gy+gh-1-(int)((tftHistTemp[a]-mn)/(mx-mn)*(gh-2));
+          int y2=gy+gh-1-(int)((tftHistTemp[b]-mn)/(mx-mn)*(gh-2));
+          oled.drawLine(gx+1+i,y1,gx+2+i,y2,SSD1306_WHITE);
+        }
+        oled.setFont(); oled.setTextSize(1); oled.setTextColor(SSD1306_WHITE,SSD1306_BLACK);
+        oled.setCursor(4,58); oled.printf("L%.1f",(double)mn);
+        oled.setCursor(56,58); oled.printf("H%.1f",(double)mx);
+        oled.setCursor(100,58); oled.printf("now %.1f",(double)state.tempBME);
+      }
+      break;
+    }
+
+    case 6: { // ---- Notes (scrolling ticker) ----
+      oledHeader("NOTES",hasTime,&ti);
+      oled.setFont(); oled.setTextSize(1);
+      if (tftNotes.length()==0) {
+        oled.setCursor(12,35); oled.print(F("No notes"));
+      } else {
+        const int boxX=2, boxY=12, boxW=124, boxH=52;
+        int curX=boxX+2, curY=boxY+2;
+        for (size_t i=0;i<tftNotes.length();i++) {
+          char c=tftNotes[i];
+          if (c=='\n') { curX=boxX+2; curY+=9; if (curY+8>boxY+boxH) break; continue; }
+          if (curX+6>boxX+boxW) { curX=boxX+2; curY+=9; if (curY+8>boxY+boxH) break; }
+          oled.setCursor(curX,curY); oled.write(c); curX+=6;
+        }
+      }
+      break;
+    }
+
+    case 7: { // ---- Tasks ----
+      oledHeader("TASKS",hasTime,&ti);
+      oled.setFont(); oled.setTextSize(1);
+      if (todoCount==0) { oled.setCursor(30,35); oled.print(F("All done!")); }
+      else {
+        int y=12;
+        for (int i=0;i<todoCount && y+9<=58;i++) {
+          oled.drawRect(0,y,5,5,SSD1306_WHITE);   // checkbox
+          oled.setCursor(9,y-1);
+          oled.print(tftTodos[i].substring(0,(y<40)?18:16));
+          y+=9;
+        }
+      }
+      oled.setCursor(106,0); oled.printf("%d/5",todoCount); // badge in header
+      break;
+    }
+
+    case 8: { // ---- Analog Clock ----
+      if (hasTime) {
+        int cx=64, cy=34, R=26;
+        for (int i=0;i<12;i++) {                // hour ticks
+          float a=(i*30-90)*(float)M_PI/180.0f;
+          int r1=R-2, r2=(i%3==0)?R-7:R-5;
+          oled.drawLine(cx+(int)(r1*cosf(a)),cy+(int)(r1*sinf(a)),
+                        cx+(int)(r2*cosf(a)),cy+(int)(r2*sinf(a)),SSD1306_WHITE);
+        }
+        float aH=((ti.tm_hour%12)+ti.tm_min/60.0f)*30.0f-90.0f;  // hour hand
+        aH*=(float)M_PI/180.0f;
+        oled.drawLine(cx,cy,cx+(int)(15*cosf(aH)),cy+(int)(15*sinf(aH)),SSD1306_WHITE);
+        float aM=(ti.tm_min*6.0f-90.0f)*(float)M_PI/180.0f;      // minute hand
+        oled.drawLine(cx,cy,cx+(int)(22*cosf(aM)),cy+(int)(22*sinf(aM)),SSD1306_WHITE);
+        oled.fillCircle(cx,cy,2,SSD1306_WHITE);
+        oled.setFont(); oled.setTextSize(1);
+        oled.setCursor(0,64);
+        oled.printf("%02d:%02d:%02d  %s %d",
+                    ti.tm_hour,ti.tm_min,ti.tm_sec,
+                    OLED_MONTHS[ti.tm_mon], ti.tm_mday);
+      } else {
+        oled.setFont(); oled.setCursor(0,20); oled.print(F("Waiting NTP..."));
+      }
+      break;
+    }
+
+    case 9: { // ---- Binary Clock (BCD) ----
+      if (hasTime) {
+        // 6 columns: H H : M M : S S  (one digit each)
+        const int digits[6] = {
+          ti.tm_hour/10, ti.tm_hour%10,
+          ti.tm_min/10,  ti.tm_min%10,
+          ti.tm_sec/10,  ti.tm_sec%10
+        };
+        const int colW=18, startX=10, topY=12, dotR=3, gap=2;
+        for (int c=0;c<6;c++) {
+          int baseX=startX + c*colW;
+          uint8_t val=digits[c];
+          for (int bit=0;bit<4;bit++) {          // BCD: bit0 at top
+            int cx=baseX+5, cy=topY + bit*(dotR*2+gap);
+            bool on = (val>>(3-bit)) & 1;
+            if (on) oled.fillCircle(cx,cy,dotR,SSD1306_WHITE);
+            else    oled.drawCircle(cx,cy,dotR,SSD1306_WHITE);
+          }
+          if (c==1 || c==3) {                    // colon divider after H1 & M1
+            int sx=baseX+colW-6;
+            oled.fillCircle(sx, topY+2,           1, SSD1306_WHITE);
+            oled.fillCircle(sx, topY+(dotR*2+gap)+2, 1, SSD1306_WHITE);
+            oled.fillCircle(sx, topY+2*(dotR*2+gap)+2, 1, SSD1306_WHITE);
+          }
+        }
+        oled.setFont(); oled.setTextSize(1);
+        oled.setCursor(22,55); oled.setTextColor(SSD1306_WHITE,SSD1306_BLACK);
+        oled.printf("%02d:%02d:%02d", ti.tm_hour,ti.tm_min,ti.tm_sec);
+        oled.setCursor(46,0);  oled.print(F("BINARY"));
+      } else {
+        oled.setFont(); oled.setCursor(0,20); oled.print(F("Waiting NTP..."));
+      }
+      break;
+    }
+
+    default: { // case 0 — Weather (default) ----
+      oled.setFont(); oled.setTextSize(1);
+      oled.setCursor(0,0);
+      if (hasTime) {
+        String ip=WiFi.localIP().toString();
+        oled.printf("%02d:%02d:%02d .%s",ti.tm_hour,ti.tm_min,ti.tm_sec,
+          ip.substring(ip.lastIndexOf('.')+1).c_str());
+      } else { oled.print(F("Wait NTP")); }
+      oled.drawLine(0,10,128,10,SSD1306_WHITE);
+      oled.setCursor(15,14); oled.print(F("IN"));
+      oled.drawLine(0,23,60,23,SSD1306_WHITE);
+      oled.drawBitmap(0,27,bmp_thermometer,16,16,SSD1306_WHITE);
+      oled.setCursor(18,31); oled.printf(isnan(state.tempDHT)?"--":"%.1f C",state.tempDHT);
+      oled.drawBitmap(0,47,bmp_droplet,16,16,SSD1306_WHITE);
+      oled.setCursor(18,51); oled.printf(isnan(state.humDHT)?"--":"%.0f %%",state.humDHT);
+      oled.drawLine(64,12,64,64,SSD1306_WHITE);
+      oled.setCursor(85,14); oled.print(F("OUT"));
+      oled.drawLine(68,23,128,23,SSD1306_WHITE);
+      oled.drawBitmap(68,27,bmp_thermometer,16,16,SSD1306_WHITE);
+      oled.setCursor(86,31); oled.printf(isnan(state.tempBME)?"--":"%.1f C",state.tempBME);
+      oled.drawBitmap(68,47,bmp_cloud,16,16,SSD1306_WHITE);
+      oled.setCursor(86,51); oled.printf(isnan(state.pressBME)?"--":"%.0f hP",state.pressBME/100.0f);
+      break;
+    }
+
+  } // end switch
   oled.display();
 }
 
@@ -934,8 +1174,15 @@ void loop() {
   if (millis()-lastWifiCheck>30000UL) {
     lastWifiCheck=millis();
     if (WiFi.status()!=WL_CONNECTED) {
-      Serial.println(F("[WiFi] Reconnecting..."));
-      WiFi.disconnect(); WiFi.begin(WIFI_SSID,WIFI_PASSWORD);
+      // Drop the current network and fail over to the next one in the list.
+      Serial.println(F("[WiFi] Lost connection — failing over"));
+      WiFi.disconnect();
+      wifiNetIndex = (wifiNetIndex + 1) % WIFI_NET_COUNT;   // rotate to next network
+      if (tryWifi(WIFI_NETWORKS[wifiNetIndex])) {
+        Serial.printf("[WiFi] Recovered via \"%s\"\n", WIFI_NETWORKS[wifiNetIndex].ssid);
+      } else {
+        Serial.println(F("[WiFi] Failover failed — will retry next cycle"));
+      }
     }
   }
 
