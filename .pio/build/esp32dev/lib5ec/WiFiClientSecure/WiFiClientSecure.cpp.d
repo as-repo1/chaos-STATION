@@ -1,4 +1,6 @@
-.pio/build/esp32dev/src/main.cpp.o: src/main.cpp \
+.pio/build/esp32dev/lib5ec/WiFiClientSecure/WiFiClientSecure.cpp.o: \
+ /home/chaos/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src/WiFiClientSecure.cpp \
+ /home/chaos/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src/WiFiClientSecure.h \
  /home/chaos/.platformio/packages/framework-arduinoespressif32/cores/esp32/Arduino.h \
  /home/chaos/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp_arduino_version.h \
  /home/chaos/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/freertos/include/freertos/FreeRTOS.h \
@@ -133,10 +135,6 @@
  /home/chaos/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/esp_hw_support/include/soc/esp32/spiram.h \
  /home/chaos/.platformio/packages/framework-arduinoespressif32/cores/esp32/io_pin_remap.h \
  /home/chaos/.platformio/packages/framework-arduinoespressif32/cores/esp32/Arduino.h \
- /home/chaos/.platformio/packages/framework-arduinoespressif32/libraries/Wire/src/Wire.h \
- /home/chaos/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal.h \
- /home/chaos/.platformio/packages/framework-arduinoespressif32/libraries/SPI/src/SPI.h \
- /home/chaos/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-spi.h \
  /home/chaos/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFi.h \
  /home/chaos/.platformio/packages/framework-arduinoespressif32/cores/esp32/Print.h \
  /home/chaos/.platformio/packages/framework-arduinoespressif32/cores/esp32/IPv6Address.h \
@@ -197,9 +195,6 @@
  /home/chaos/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiUdp.h \
  /home/chaos/.platformio/packages/framework-arduinoespressif32/cores/esp32/Udp.h \
  /home/chaos/.platformio/packages/framework-arduinoespressif32/cores/esp32/cbuf.h \
- /home/chaos/.platformio/packages/framework-arduinoespressif32/libraries/HTTPClient/src/HTTPClient.h \
- /home/chaos/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiClient.h \
- /home/chaos/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src/WiFiClientSecure.h \
  /home/chaos/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src/ssl_client.h \
  /home/chaos/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/mbedtls/mbedtls/include/mbedtls/platform.h \
  /home/chaos/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/mbedtls/port/include/mbedtls/esp_config.h \
@@ -238,34 +233,17 @@
  /home/chaos/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/mbedtls/port/include/aes/esp_aes.h \
  /home/chaos/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/hal/include/hal/aes_types.h \
  /home/chaos/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/mbedtls/mbedtls/include/mbedtls/error.h \
- /home/chaos/.platformio/packages/framework-arduinoespressif32/libraries/DNSServer/src/DNSServer.h \
- /home/chaos/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiUdp.h \
- /home/chaos/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src/WebServer.h \
- /home/chaos/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src/HTTP_Method.h \
- /home/chaos/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/nghttp/port/include/http_parser.h \
- /home/chaos/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src/Uri.h \
- /home/chaos/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src/detail/RequestHandler.h \
- /home/chaos/.platformio/packages/framework-arduinoespressif32/libraries/ESPmDNS/src/ESPmDNS.h \
- /home/chaos/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/mdns/include/mdns.h \
- /home/chaos/.platformio/packages/framework-arduinoespressif32/libraries/LittleFS/src/LittleFS.h \
- /home/chaos/.platformio/packages/framework-arduinoespressif32/libraries/FS/src/FS.h \
- .pio/libdeps/esp32dev/Adafruit\ GFX\ Library/Adafruit_GFX.h \
- .pio/libdeps/esp32dev/Adafruit\ GFX\ Library/gfxfont.h \
- .pio/libdeps/esp32dev/Adafruit\ BusIO/Adafruit_I2CDevice.h \
- .pio/libdeps/esp32dev/Adafruit\ BusIO/Adafruit_SPIDevice.h \
- .pio/libdeps/esp32dev/Adafruit\ SSD1306/Adafruit_SSD1306.h \
- .pio/libdeps/esp32dev/Adafruit\ ST7735\ and\ ST7789\ Library/Adafruit_ST7735.h \
- .pio/libdeps/esp32dev/Adafruit\ ST7735\ and\ ST7789\ Library/Adafruit_ST77xx.h \
- .pio/libdeps/esp32dev/Adafruit\ GFX\ Library/Adafruit_SPITFT.h \
- .pio/libdeps/esp32dev/Adafruit\ GFX\ Library/Adafruit_GFX.h \
- .pio/libdeps/esp32dev/Adafruit\ GFX\ Library/Adafruit_SPITFT_Macros.h \
- .pio/libdeps/esp32dev/Adafruit\ BMP085\ Library/Adafruit_BMP085.h \
- .pio/libdeps/esp32dev/DHT\ sensor\ library/DHT.h \
- .pio/libdeps/esp32dev/ArduinoJson/src/ArduinoJson.h \
- .pio/libdeps/esp32dev/ArduinoJson/src/ArduinoJson.hpp \
- .pio/libdeps/esp32dev/ArduinoJson/src/ArduinoJson/Configuration.hpp \
- .pio/libdeps/esp32dev/QRCode/src/qrcode.h \
- .pio/libdeps/esp32dev/Adafruit\ GFX\ Library/Fonts/FreeSans9pt7b.h \
- .pio/libdeps/esp32dev/Adafruit\ GFX\ Library/Fonts/FreeSansBold12pt7b.h \
- .pio/libdeps/esp32dev/Adafruit\ GFX\ Library/Fonts/FreeSans12pt7b.h \
- .pio/libdeps/esp32dev/Adafruit\ GFX\ Library/Fonts/FreeSans18pt7b.h
+ /home/chaos/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src/esp_crt_bundle.h \
+ /home/chaos/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/lwip/lwip/src/include/lwip/sockets.h \
+ /home/chaos/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/newlib/platform_include/sys/poll.h \
+ /home/chaos/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/lwip/lwip/src/include/lwip/netif.h \
+ /home/chaos/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/lwip/lwip/src/include/lwip/pbuf.h \
+ /home/chaos/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/lwip/lwip/src/include/lwip/stats.h \
+ /home/chaos/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/lwip/lwip/src/include/lwip/mem.h \
+ /home/chaos/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/lwip/lwip/src/include/lwip/memp.h \
+ /home/chaos/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/lwip/lwip/src/include/lwip/priv/memp_std.h \
+ /home/chaos/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/lwip/lwip/src/include/lwip/priv/memp_priv.h \
+ /home/chaos/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/lwip/lwip/src/include/lwip/priv/mem_priv.h \
+ /home/chaos/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/lwip/lwip/src/include/lwip/inet.h \
+ /home/chaos/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/lwip/lwip/src/include/lwip/errno.h \
+ /home/chaos/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/lwip/lwip/src/include/lwip/netdb.h
